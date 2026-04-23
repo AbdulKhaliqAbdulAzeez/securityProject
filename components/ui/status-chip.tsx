@@ -1,4 +1,4 @@
-type StatusChipTone = "active" | "ready";
+type StatusChipTone = "active" | "ready" | "idle" | "warning";
 
 type StatusChipProps = {
   label: string;

@@ -1,8 +1,9 @@
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      Sprint 0 establishes the repository contract only. API wiring, security
-      scanning, and GitHub delivery land in later transition sprints.
+      Sprint 1 replaces the placeholder frontend with a real workflow shell. The
+      Python bridge, Checkov gate, and GitHub pull-request delivery still arrive in
+      later transition sprints.
     </footer>
   );
 }

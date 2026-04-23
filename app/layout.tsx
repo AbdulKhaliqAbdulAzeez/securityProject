@@ -18,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body className="site-body">
         <div className="site-frame">
           <SiteHeader />
           {children}

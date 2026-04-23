@@ -1,1 +1,1 @@
-Browser coverage is intentionally deferred until a later transition sprint.
+Browser coverage now starts with a Sprint 1 smoke test for the workflow shell.

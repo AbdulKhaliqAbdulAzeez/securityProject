@@ -17,7 +17,7 @@ Every foundational feature should follow the same lifecycle:
 | Workstream | Status | Sprints | What It Produces |
 | ---------- | ------ | ------- | ---------------- |
 | [site-foundation](site-foundation/) | Complete | 6 | Repository bootstrap, generator contract, Terraform validation engine, Streamlit UI, safety hardening, QA pass |
-| [nextjs-platform-transition](nextjs-platform-transition/) | Planned | 6 | Next.js application shell, Python backend bridge, Checkov security gate, GitHub pull-request delivery |
+| [nextjs-platform-transition](nextjs-platform-transition/) | In Progress | 6 | Next.js application shell, Python backend bridge, Checkov security gate, GitHub pull-request delivery |
 
 ## How To Read A Workstream
 
