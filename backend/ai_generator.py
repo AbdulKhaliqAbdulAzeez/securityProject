@@ -102,7 +102,7 @@ def generate_terraform(user_request: str) -> str:
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash")
         llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=api_key,

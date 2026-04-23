@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import tf_validator
+from backend import tf_validator
 
 
 def test_command_log_render_includes_all_sections() -> None:

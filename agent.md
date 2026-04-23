@@ -8,9 +8,9 @@ standards for the AI-Powered Terraform Architect & Validator project.
 
 ## Purpose Of This Repository
 
-This repository is a Python MVP for converting natural-language infrastructure
-requests into Terraform, then formatting and validating the generated HCL with
-the local Terraform CLI.
+This repository is a dual-stack transition project that is moving from a
+Python Streamlit MVP into a Next.js frontend with a dedicated Python backend
+for Terraform generation and validation.
 
 The product goal matters, but the repository also exists to demonstrate a
 professional orchestration model for AI-assisted software delivery. Durable
@@ -28,18 +28,19 @@ Before doing meaningful work, read these in order:
 6. `docs/foundation/commit-and-review-guide.md`
 7. `docs/_specs/README.md`
 8. `docs/_specs/site-foundation/spec.md`
-9. the active sprint doc under `docs/_specs/site-foundation/sprints/`
+9. the active sprint doc under `docs/_specs/{active-feature}/sprints/`
 10. the live code or docs touched by that sprint
 
 ## Current Repository State
 
-The repository has completed the `site-foundation` workstream.
+The repository has completed the `site-foundation` workstream and is now
+executing the `nextjs-platform-transition` workstream.
 
 Current priorities:
 
 - preserve the durable specs, sprint artifacts, and QA records
-- use new feature specs or change notes for future work instead of reopening completed sprints
-- keep the MVP safety boundaries intact while iterating on later work
+- keep the verified Python backend behavior intact while the frontend changes
+- execute transition work one sprint at a time under the active feature spec
 
 ## Non-Negotiable Process Rules
 

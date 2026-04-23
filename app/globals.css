@@ -1,0 +1,270 @@
+:root {
+  --background: #f3efe5;
+  --panel: rgba(252, 249, 242, 0.9);
+  --panel-strong: #fffaf0;
+  --ink: #1f1d1a;
+  --muted: #5f564a;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.14);
+  --border: rgba(31, 29, 26, 0.14);
+  --shadow: 0 24px 80px rgba(58, 47, 34, 0.12);
+  --display-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia,
+    serif;
+  --body-font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(191, 126, 55, 0.16), transparent 36%),
+    var(--background);
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--body-font);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.75), rgba(243, 239, 229, 0.92)),
+    url("/workflow-grid.svg");
+  background-size: cover, 720px 720px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-frame {
+  min-height: 100vh;
+}
+
+.site-header,
+.site-footer {
+  width: min(1180px, calc(100vw - 2rem));
+  margin: 0 auto;
+}
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.2rem 0 0.8rem;
+}
+
+.site-header__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.site-header__eyebrow,
+.hero-eyebrow,
+.section-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.site-header__title,
+.hero-title,
+.section-title {
+  font-family: var(--display-font);
+}
+
+.site-header__title {
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+.site-header__meta {
+  max-width: 26rem;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.workflow-page {
+  width: min(1180px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.hero-panel,
+.stack-card,
+.milestone-card {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.hero-panel {
+  padding: clamp(1.6rem, 3vw, 3rem);
+  border-radius: 2rem;
+}
+
+.hero-title {
+  margin: 0.45rem 0 1rem;
+  font-size: clamp(2.7rem, 7vw, 5.8rem);
+  line-height: 0.95;
+  max-width: 10.5ch;
+}
+
+.hero-copy {
+  max-width: 46rem;
+  font-size: 1.06rem;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+}
+
+.hero-primary,
+.hero-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.hero-primary {
+  background: var(--ink);
+  color: #f8f4eb;
+}
+
+.hero-secondary {
+  border: 1px solid var(--border);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.workflow-grid {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.stack-card {
+  border-radius: 1.5rem;
+  padding: 1.35rem;
+}
+
+.stack-card--split {
+  grid-column: span 7;
+}
+
+.stack-card--milestones {
+  grid-column: span 5;
+}
+
+.stack-list,
+.milestone-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.stack-list li,
+.milestone-card {
+  margin-top: 0.9rem;
+}
+
+.stack-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(31, 29, 26, 0.08);
+}
+
+.stack-row__title {
+  font-weight: 700;
+  margin: 0;
+}
+
+.stack-row__copy,
+.milestone-card p,
+.section-copy,
+.site-footer {
+  color: var(--muted);
+}
+
+.status-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-chip--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(15, 118, 110, 0.2);
+}
+
+.status-chip--ready {
+  background: rgba(191, 126, 55, 0.12);
+  color: #8a4d15;
+  border-color: rgba(138, 77, 21, 0.18);
+}
+
+.milestone-card {
+  border-radius: 1.15rem;
+  padding: 1rem;
+}
+
+.milestone-card h3 {
+  margin: 0.55rem 0;
+}
+
+.site-footer {
+  padding: 1rem 0 2.25rem;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 960px) {
+  .stack-card--split,
+  .stack-card--milestones {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .site-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .site-header__meta {
+    text-align: left;
+  }
+
+  .stack-row {
+    flex-direction: column;
+  }
+}

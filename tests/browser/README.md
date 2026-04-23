@@ -1,0 +1,1 @@
+Browser coverage is intentionally deferred until a later transition sprint.

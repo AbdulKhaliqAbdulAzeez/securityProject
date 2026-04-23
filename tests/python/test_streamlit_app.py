@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import app
+from backend import streamlit_app
 
 
 @dataclass
@@ -52,27 +52,31 @@ class FakeStreamlit:
 
 def test_handle_submission_warns_for_blank_request(monkeypatch) -> None:
     fake_streamlit = FakeStreamlit()
-    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(streamlit_app, "st", fake_streamlit)
 
-    app._initialize_session_state()
-    app._handle_submission("   ")
+    streamlit_app._initialize_session_state()
+    streamlit_app._handle_submission("   ")
 
     assert fake_streamlit.warning_messages == [
         "Enter an infrastructure request before running the workflow."
     ]
     assert (
-        fake_streamlit.session_state["generated_code"] == app.DEFAULT_CODE_PLACEHOLDER
+        fake_streamlit.session_state["generated_code"]
+        == streamlit_app.DEFAULT_CODE_PLACEHOLDER
     )
-    assert fake_streamlit.session_state["validation_log"] == app.DEFAULT_LOG_PLACEHOLDER
+    assert (
+        fake_streamlit.session_state["validation_log"]
+        == streamlit_app.DEFAULT_LOG_PLACEHOLDER
+    )
     assert fake_streamlit.session_state["validation_success"] is None
 
 
 def test_handle_submission_updates_session_state_on_success(monkeypatch) -> None:
     fake_streamlit = FakeStreamlit()
-    monkeypatch.setattr(app, "st", fake_streamlit)
-    monkeypatch.setattr(app, "generate_terraform", lambda _: "resource {}")
+    monkeypatch.setattr(streamlit_app, "st", fake_streamlit)
+    monkeypatch.setattr(streamlit_app, "generate_terraform", lambda _: "resource {}")
     monkeypatch.setattr(
-        app,
+        streamlit_app,
         "validate_terraform",
         lambda _: FakeValidationResult(
             success=True,
@@ -81,8 +85,8 @@ def test_handle_submission_updates_session_state_on_success(monkeypatch) -> None
         ),
     )
 
-    app._initialize_session_state()
-    app._handle_submission("Create an AWS VPC")
+    streamlit_app._initialize_session_state()
+    streamlit_app._handle_submission("Create an AWS VPC")
 
     assert fake_streamlit.session_state["generated_code"] == "formatted resource {}"
     assert fake_streamlit.session_state["validation_log"] == "validation passed"
@@ -96,22 +100,24 @@ def test_handle_submission_reports_generation_failures_without_raw_details(
     monkeypatch,
 ) -> None:
     fake_streamlit = FakeStreamlit()
-    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(streamlit_app, "st", fake_streamlit)
 
     def raise_generation_error(_: str) -> str:
         raise RuntimeError("api key leaked")
 
-    monkeypatch.setattr(app, "generate_terraform", raise_generation_error)
+    monkeypatch.setattr(streamlit_app, "generate_terraform", raise_generation_error)
 
-    app._initialize_session_state()
-    app._handle_submission("Create an AWS VPC")
+    streamlit_app._initialize_session_state()
+    streamlit_app._handle_submission("Create an AWS VPC")
 
     assert (
-        fake_streamlit.session_state["generated_code"] == app.DEFAULT_CODE_PLACEHOLDER
+        fake_streamlit.session_state["generated_code"]
+        == streamlit_app.DEFAULT_CODE_PLACEHOLDER
     )
     assert fake_streamlit.session_state["validation_success"] is False
     assert (
-        app.GENERATION_FAILURE_MESSAGE in fake_streamlit.session_state["validation_log"]
+        streamlit_app.GENERATION_FAILURE_MESSAGE
+        in fake_streamlit.session_state["validation_log"]
     )
     assert "error type: RuntimeError" in fake_streamlit.session_state["validation_log"]
     assert "api key leaked" not in fake_streamlit.session_state["validation_log"]
@@ -124,21 +130,26 @@ def test_handle_submission_reports_validation_failures_without_raw_details(
     monkeypatch,
 ) -> None:
     fake_streamlit = FakeStreamlit()
-    monkeypatch.setattr(app, "st", fake_streamlit)
-    monkeypatch.setattr(app, "generate_terraform", lambda _: "generated resource")
+    monkeypatch.setattr(streamlit_app, "st", fake_streamlit)
+    monkeypatch.setattr(
+        streamlit_app,
+        "generate_terraform",
+        lambda _: "generated resource",
+    )
 
     def raise_validation_error(_: str) -> FakeValidationResult:
         raise RuntimeError("provider token leaked")
 
-    monkeypatch.setattr(app, "validate_terraform", raise_validation_error)
+    monkeypatch.setattr(streamlit_app, "validate_terraform", raise_validation_error)
 
-    app._initialize_session_state()
-    app._handle_submission("Create an AWS VPC")
+    streamlit_app._initialize_session_state()
+    streamlit_app._handle_submission("Create an AWS VPC")
 
     assert fake_streamlit.session_state["generated_code"] == "generated resource"
     assert fake_streamlit.session_state["validation_success"] is False
     assert (
-        app.VALIDATION_FAILURE_MESSAGE in fake_streamlit.session_state["validation_log"]
+        streamlit_app.VALIDATION_FAILURE_MESSAGE
+        in fake_streamlit.session_state["validation_log"]
     )
     assert "error type: RuntimeError" in fake_streamlit.session_state["validation_log"]
     assert "provider token leaked" not in fake_streamlit.session_state["validation_log"]

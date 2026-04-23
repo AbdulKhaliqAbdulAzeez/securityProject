@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_generator import FALLBACK_TERRAFORM, _strip_markdown_fences, generate_terraform
+from backend.ai_generator import (
+    FALLBACK_TERRAFORM,
+    _strip_markdown_fences,
+    generate_terraform,
+)
 
 
 def _install_fake_genai_module(
