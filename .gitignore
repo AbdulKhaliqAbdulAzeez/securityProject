@@ -1,0 +1,58 @@
+# Python runtime and packaging
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Terraform working state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local generated workspaces and logs
+tmp/
+.tmp/
+artifacts/
+generated/
+*.log
+
+# Local reference and ideation materials
+docs/_nextjs_ai_orchestration_reference/
+docs/_project_idea/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
