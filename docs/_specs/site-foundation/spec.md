@@ -36,7 +36,7 @@ validation.
 
 - Python 3.x implementation
 - Streamlit interface
-- Gemini-first generation path through LangChain
+- Gemini-first generation path through the Google Gen AI SDK
 - AWS-only Terraform generation
 - single-file Terraform output suitable for `main.tf`
 - temporary workspace validation through `terraform fmt`, `terraform init`, and

@@ -1,9 +1,10 @@
 export const defaultInfrastructurePrompt =
   "Create a highly available AWS EC2 web server with an application load balancer and a security group that allows HTTP traffic.";
 
+import type { WorkflowApiResponse } from "@/lib/workflow-api";
+
 export type StatusTone = "idle" | "active" | "warning" | "ready";
 export type NoticeTone = "info" | "error";
-export type WorkflowScenarioId = "blocked" | "ready";
 
 export type WorkflowStep = {
   id: "generation" | "validation" | "security";
@@ -18,6 +19,7 @@ export type FeedbackSection = {
   label: string;
   title: string;
   body: string;
+  log?: string;
 };
 
 export type WorkflowReadiness = {
@@ -29,35 +31,17 @@ export type WorkflowReadiness = {
   tone: "idle" | "warning" | "ready";
 };
 
-export type WorkflowPreview = {
+export type WorkflowViewModel = {
   terraform: string;
   steps: WorkflowStep[];
   feedbackSections: FeedbackSection[];
   readiness: WorkflowReadiness;
+  isBusy: boolean;
 };
 
-export const scenarioOptions: Array<{
-  id: WorkflowScenarioId;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "blocked",
-    label: "Security gate preview",
-    description:
-      "Models a run where Terraform generation and validation are visible, but security review still blocks readiness.",
-  },
-  {
-    id: "ready",
-    label: "Ready-state preview",
-    description:
-      "Models the future frontend state after generation, validation, and security review all pass, while GitOps remains disabled.",
-  },
-];
-
-export const emptyWorkflowPreview: WorkflowPreview = {
+export const idleWorkflowViewModel: WorkflowViewModel = {
   terraform:
-    "# Generated Terraform preview will appear here once the workflow is staged.\n# The live backend response will replace this placeholder in Sprint 2.",
+    "# Generated Terraform output will appear here after the Python workflow API returns a response.",
   steps: [
     {
       id: "generation",
@@ -90,14 +74,14 @@ export const emptyWorkflowPreview: WorkflowPreview = {
       label: "Generation",
       title: "No backend run staged",
       body:
-        "Stage the workflow shell to preview how generation contract notes will be presented in the new frontend.",
+        "Run the workflow to send the prompt through the Python API bridge and capture generation metadata.",
     },
     {
       id: "validation",
       label: "Validation",
       title: "Validation logs reserved",
       body:
-        "This panel replaces the old generic output area so Terraform-specific feedback has a dedicated home.",
+        "Terraform fmt, init, and validate results will appear here after the backend returns command output.",
     },
     {
       id: "security",
@@ -117,178 +101,238 @@ export const emptyWorkflowPreview: WorkflowPreview = {
       "Deploy to GitHub stays disabled until Sprint 4 adds branch creation, commit delivery, and pull-request generation.",
     tone: "idle",
   },
+  isBusy: false,
 };
 
-function buildTerraformPreview(prompt: string, scenario: WorkflowScenarioId): string {
-  const normalizedPrompt = prompt.trim();
-  const reviewTag = scenario === "ready" ? "ready-preview" : "security-review-preview";
-
-  return [
-    "# Frontend workflow shell preview",
-    `# Request: ${normalizedPrompt}`,
-    "terraform {",
-    '  required_version = ">= 1.6.0"',
-    "",
-    "  required_providers {",
-    "    aws = {",
-    '      source  = "hashicorp/aws"',
-    '      version = "~> 5.0"',
-    "    }",
-    "  }",
-    "}",
-    "",
-    'provider "aws" {',
-    '  region = "us-east-1"',
-    "}",
-    "",
-    'resource "aws_security_group" "web" {',
-    `  name        = "${reviewTag}"`,
-    '  description = "Workflow shell preview security group"',
-    "",
-    "  ingress {",
-    '    description = "Allow HTTP"',
-    '    from_port   = 80',
-    '    to_port     = 80',
-    '    protocol    = "tcp"',
-    '    cidr_blocks = ["0.0.0.0/0"]',
-    "  }",
-    "}",
-  ].join("\n");
+function createLogTitle(status: WorkflowApiResponse["validation"]["status"]): string {
+  return status === "passed" ? "Validation logs captured" : "Validation errors captured";
 }
 
-export function createWorkflowPreview(
-  prompt: string,
-  scenario: WorkflowScenarioId,
-): WorkflowPreview {
-  const normalizedPrompt = prompt.trim() || defaultInfrastructurePrompt;
-
-  if (scenario === "ready") {
+function createReadinessState(
+  response: WorkflowApiResponse,
+): WorkflowReadiness {
+  if (response.readiness.is_ready) {
     return {
-      terraform: buildTerraformPreview(normalizedPrompt, scenario),
-      steps: [
-        {
-          id: "generation",
-          label: "Generation",
-          status: "Complete",
-          detail:
-            "The shell now shows where cleaned Terraform output returns after the Gemini-backed generation step.",
-          tone: "ready",
-        },
-        {
-          id: "validation",
-          label: "Terraform validation",
-          status: "Passed",
-          detail:
-            "The future backend bridge will stream fmt, init, and validate results into this dedicated workflow region.",
-          tone: "ready",
-        },
-        {
-          id: "security",
-          label: "Security scan",
-          status: "Passed",
-          detail:
-            "The UI can already represent a fully reviewed state before Checkov is wired in Sprint 3.",
-          tone: "ready",
-        },
-      ],
-      feedbackSections: [
-        {
-          id: "generation",
-          label: "Generation",
-          title: "Prompt contract staged",
-          body:
-            `The shell is ready to send the request \"${normalizedPrompt}\" through the future Python API without reintroducing Streamlit-specific UI assumptions.`,
-        },
-        {
-          id: "validation",
-          label: "Validation",
-          title: "Validation surface reserved",
-          body:
-            "Terraform-specific feedback will remain separate from code output so operators can scan command results without losing the generated HCL view.",
-        },
-        {
-          id: "security",
-          label: "Security",
-          title: "Ready-state modeled early",
-          body:
-            "This preview shows the future all-clear state while keeping the actual deploy control disabled until GitOps arrives.",
-        },
-      ],
-      readiness: {
-        label: "Ready state visible",
-        title: "Ready for GitOps handoff",
-        summary:
-          "Generation, validation, and security review all read as green in this shell preview.",
-        detail:
-          "The frontend now exposes the future ready-to-deploy state explicitly, even though GitHub delivery is still a later sprint.",
-        deployHint:
-          "GitOps delivery is intentionally disabled today. Sprint 4 will connect this ready state to branch creation and pull-request output.",
-        tone: "ready",
-      },
+      label: "Ready",
+      title: "Ready for GitOps handoff",
+      summary: response.readiness.message,
+      detail: response.security.message,
+      deployHint: response.readiness.deploy_hint,
+      tone: "ready",
+    };
+  }
+
+  if (response.validation.status === "failed") {
+    return {
+      label: "Blocked by validation",
+      title: "Not ready to deploy",
+      summary: response.readiness.message,
+      detail:
+        "Resolve the Terraform validation failures before the workflow can advance to a security review gate.",
+      deployHint: response.readiness.deploy_hint,
+      tone: "warning",
     };
   }
 
   return {
-    terraform: buildTerraformPreview(normalizedPrompt, scenario),
+    label: "Pending security review",
+    title: "Validation passed, security still pending",
+    summary: response.readiness.message,
+    detail: response.security.message,
+    deployHint: response.readiness.deploy_hint,
+    tone: "warning",
+  };
+}
+
+export function createRunningWorkflowViewModel(prompt: string): WorkflowViewModel {
+  return {
+    terraform: `# Waiting for backend response\n# Request: ${prompt.trim() || defaultInfrastructurePrompt}`,
     steps: [
       {
         id: "generation",
         label: "Generation",
-        status: "Complete",
-        detail:
-          "The shell mirrors the cleaned Terraform handoff from the existing backend generation module.",
-        tone: "ready",
+        status: "Running",
+        detail: "Submitting the natural-language request to the Python API bridge.",
+        tone: "active",
       },
       {
         id: "validation",
         label: "Terraform validation",
-        status: "Passed",
+        status: "Waiting on generation",
         detail:
-          "The UI now reserves a distinct validation region instead of merging Terraform logs into one generic output block.",
-        tone: "ready",
+          "Terraform fmt, init, and validate will run after generation returns code.",
+        tone: "idle",
       },
       {
         id: "security",
         label: "Security scan",
-        status: "Blocked",
+        status: "Queued for Sprint 3",
         detail:
-          "The future Checkov gate already has a visible state boundary so it can block readiness as soon as Sprint 3 lands.",
-        tone: "warning",
+          "Security scanning remains visible in the UI even though the backend contract is not wired yet.",
+        tone: "idle",
       },
     ],
     feedbackSections: [
       {
         id: "generation",
         label: "Generation",
-        title: "Terraform staged for review",
+        title: "Sending prompt to backend",
         body:
-          `The prompt \"${normalizedPrompt}\" now flows through a frontend shell that preserves the existing backend contract while replacing the Streamlit surface.`,
+          "The prompt is in flight to the Python API bridge for Terraform generation.",
       },
       {
         id: "validation",
         label: "Validation",
-        title: "Validation results remain readable",
+        title: "Validation pending",
         body:
-          "When the Python API lands, fmt, init, and validate logs will stream into this panel without displacing the Terraform code view.",
+          "Validation logs will populate here after generation completes and the Terraform CLI finishes.",
       },
       {
         id: "security",
         label: "Security",
-        title: "Blocking findings modeled",
+        title: "Security gate remains queued",
         body:
-          "This preview keeps deployment blocked to demonstrate the future Checkov gate and make readiness rules visible before backend integration exists.",
+          "The workflow still reserves a security gate before any deploy action becomes available.",
       },
     ],
     readiness: {
-      label: "Blocked by security review",
-      title: "Not ready to deploy",
-      summary:
-        "The shell can already show a blocked readiness path before the security scanner is implemented.",
+      label: "Working",
+      title: "Workflow running",
+      summary: "Waiting for the backend to return generation and validation results.",
       detail:
-        "Deploy readiness must stay false until both Terraform validation and security scanning succeed, so the UI models that rule early.",
+        "Deploy readiness remains disabled while the Python workflow request is still running.",
       deployHint:
-        "The deploy control stays disabled until Sprint 3 wires the security gate and Sprint 4 adds GitHub delivery.",
+        "Deploy stays disabled until Sprint 3 adds security scanning and Sprint 4 adds GitOps delivery.",
+      tone: "idle",
+    },
+    isBusy: true,
+  };
+}
+
+export function createWorkflowViewModelFromResponse(
+  response: WorkflowApiResponse,
+): WorkflowViewModel {
+  const generationTone = response.generation.used_fallback ? "warning" : "ready";
+  const generationStatus = response.generation.used_fallback ? "Fallback used" : "Complete";
+  const validationTone = response.validation.status === "passed" ? "ready" : "warning";
+  const validationStatus = response.validation.status === "passed" ? "Passed" : "Failed";
+
+  return {
+    terraform:
+      response.terraform.formatted_code || response.terraform.generated_code || idleWorkflowViewModel.terraform,
+    steps: [
+      {
+        id: "generation",
+        label: "Generation",
+        status: generationStatus,
+        detail: response.generation.message,
+        tone: generationTone,
+      },
+      {
+        id: "validation",
+        label: "Terraform validation",
+        status: validationStatus,
+        detail: response.validation.message,
+        tone: validationTone,
+      },
+      {
+        id: "security",
+        label: "Security scan",
+        status: "Queued for Sprint 3",
+        detail: response.security.message,
+        tone: "idle",
+      },
+    ],
+    feedbackSections: [
+      {
+        id: "generation",
+        label: "Generation",
+        title: response.generation.used_fallback ? "Fallback Terraform returned" : "Terraform generated",
+        body: response.generation.message,
+      },
+      {
+        id: "validation",
+        label: "Validation",
+        title: createLogTitle(response.validation.status),
+        body: response.validation.message,
+        log: response.validation.combined_log,
+      },
+      {
+        id: "security",
+        label: "Security",
+        title: "Security gate still pending",
+        body: response.security.message,
+      },
+    ],
+    readiness: createReadinessState(response),
+    isBusy: false,
+  };
+}
+
+export function createWorkflowFailureViewModel(
+  prompt: string,
+  message: string,
+): WorkflowViewModel {
+  const normalizedPrompt = prompt.trim();
+
+  return {
+    terraform: normalizedPrompt
+      ? `# Terraform output unavailable because the backend request failed.\n# Request: ${normalizedPrompt}`
+      : idleWorkflowViewModel.terraform,
+    steps: [
+      {
+        id: "generation",
+        label: "Generation",
+        status: "Failed",
+        detail: message,
+        tone: "warning",
+      },
+      {
+        id: "validation",
+        label: "Terraform validation",
+        status: "Not run",
+        detail: "Validation did not start because the backend request did not complete.",
+        tone: "idle",
+      },
+      {
+        id: "security",
+        label: "Security scan",
+        status: "Queued for Sprint 3",
+        detail:
+          "Security scanning remains unavailable until Sprint 3 wires the Checkov gate.",
+        tone: "idle",
+      },
+    ],
+    feedbackSections: [
+      {
+        id: "generation",
+        label: "Generation",
+        title: "Backend request failed",
+        body: message,
+      },
+      {
+        id: "validation",
+        label: "Validation",
+        title: "Validation did not run",
+        body: "No Terraform validation logs are available because the workflow did not reach the validation stage.",
+      },
+      {
+        id: "security",
+        label: "Security",
+        title: "Security gate still pending",
+        body:
+          "The deploy gate remains blocked until the backend succeeds and the later security sprint is implemented.",
+      },
+    ],
+    readiness: {
+      label: "Blocked by backend error",
+      title: "Not ready to deploy",
+      summary: message,
+      detail: "Fix the backend request failure before generation and validation can resume.",
+      deployHint:
+        "Deploy to GitHub remains disabled until the backend is reachable, security scanning is wired, and GitOps delivery exists.",
       tone: "warning",
     },
+    isBusy: false,
   };
 }

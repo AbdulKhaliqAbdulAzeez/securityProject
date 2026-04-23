@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from textwrap import dedent
 from typing import Any
 
@@ -44,6 +45,19 @@ FALLBACK_TERRAFORM = dedent(
     """
 ).strip()
 
+DEFAULT_GEMINI_MODEL = "gemini-3-flash"
+MODEL_NAME_ALIASES = {
+    "gemini-3-flash": "gemini-3-flash-preview",
+    "models/gemini-3-flash": "models/gemini-3-flash-preview",
+}
+
+
+@dataclass(frozen=True)
+class GenerationResult:
+    terraform: str
+    used_fallback: bool
+    message: str
+
 
 def is_api_key_configured() -> bool:
     return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
@@ -67,6 +81,9 @@ def _build_prompt(user_request: str) -> str:
 
 
 def _coerce_response_content(content: Any) -> str:
+    if content is None:
+        return ""
+
     if isinstance(content, str):
         return content.strip()
 
@@ -79,8 +96,29 @@ def _coerce_response_content(content: Any) -> str:
 
             if isinstance(item, dict) and isinstance(item.get("text"), str):
                 parts.append(item["text"].strip())
+                continue
+
+            text_value = getattr(item, "text", None)
+            if isinstance(text_value, str):
+                parts.append(text_value.strip())
 
         return "\n".join(part for part in parts if part).strip()
+
+    if isinstance(content, dict):
+        text_value = content.get("text")
+        if text_value is not None:
+            return _coerce_response_content(text_value)
+
+        if isinstance(content.get("parts"), list):
+            return _coerce_response_content(content["parts"])
+
+    text_value = getattr(content, "text", None)
+    if text_value is not None:
+        return _coerce_response_content(text_value)
+
+    parts = getattr(content, "parts", None)
+    if isinstance(parts, list):
+        return _coerce_response_content(parts)
 
     return str(content).strip()
 
@@ -91,28 +129,93 @@ def _strip_markdown_fences(output: str) -> str:
     return fence_pattern.sub("", cleaned).strip()
 
 
-def generate_terraform(user_request: str) -> str:
+def _resolve_model_name(model_name: str) -> str:
+    return MODEL_NAME_ALIASES.get(model_name, model_name)
+
+
+def _request_gemini_response(user_request: str, api_key: str) -> str:
+    from google import genai
+
+    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    api_version = os.getenv("GEMINI_API_VERSION")
+    if api_version:
+        client_kwargs["http_options"] = {"api_version": api_version}
+
+    model_name = _resolve_model_name(os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL))
+    with genai.Client(**client_kwargs) as client:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=_build_prompt(user_request),
+            config={"temperature": 0},
+        )
+
+    return _strip_markdown_fences(_coerce_response_content(response))
+
+
+def _build_model_failure_message(error: Exception) -> str:
+    detail = str(error).strip()
+    if detail:
+        return (
+            "The model request could not complete cleanly "
+            f"({type(error).__name__}: {detail}). Using the safe fallback Terraform "
+            "document instead."
+        )
+
+    return (
+        "The model request could not complete cleanly. Using the safe fallback "
+        "Terraform document instead."
+    )
+
+
+def generate_terraform_result(user_request: str) -> GenerationResult:
     if not user_request.strip():
         raise ValueError("A natural-language infrastructure request is required.")
 
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return FALLBACK_TERRAFORM
+        return GenerationResult(
+            terraform=FALLBACK_TERRAFORM,
+            used_fallback=True,
+            message=(
+                "No Gemini API key is configured. Using the safe fallback Terraform "
+                "document instead of a live model response."
+            ),
+        )
 
     try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        cleaned = _request_gemini_response(user_request, api_key)
+        if cleaned:
+            return GenerationResult(
+                terraform=cleaned,
+                used_fallback=False,
+                message=(
+                    "Terraform generated successfully from the Gemini-backed model."
+                ),
+            )
 
-        model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash")
-        llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=api_key,
-            temperature=0,
+        return GenerationResult(
+            terraform=FALLBACK_TERRAFORM,
+            used_fallback=True,
+            message=(
+                "The model returned an empty response. Using the safe fallback "
+                "Terraform document instead."
+            ),
         )
-        response = llm.invoke(_build_prompt(user_request))
-        cleaned = _strip_markdown_fences(_coerce_response_content(response.content))
-        return cleaned or FALLBACK_TERRAFORM
-    except Exception:
-        return FALLBACK_TERRAFORM
+    except Exception as error:
+        return GenerationResult(
+            terraform=FALLBACK_TERRAFORM,
+            used_fallback=True,
+            message=_build_model_failure_message(error),
+        )
 
 
-__all__ = ["generate_terraform", "is_api_key_configured"]
+def generate_terraform(user_request: str) -> str:
+    return generate_terraform_result(user_request).terraform
+
+
+__all__ = [
+    "GenerationResult",
+    "generate_terraform",
+    "generate_terraform_result",
+    "is_api_key_configured",
+]

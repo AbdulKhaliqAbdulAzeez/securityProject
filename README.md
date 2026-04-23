@@ -2,18 +2,18 @@
 
 This repository is transitioning from a Python-only Streamlit MVP into a
 dual-stack project with a root Next.js frontend and a dedicated Python backend.
-The current sprint bootstraps that layout without discarding the verified
-Terraform generation and validation modules.
+The current sprint exposes the verified Terraform generation and validation
+modules through a Python API that the Next.js frontend can call directly.
 
 ## Current Product Surface
 
 - the Python backend still generates AWS-focused Terraform with a Gemini-first
-	LangChain integration
+	Google Gen AI SDK integration
 - the backend still validates generated HCL locally with `terraform fmt`,
 	`terraform init`, and `terraform validate`
+- the new root Next.js application now submits prompts through `app/api/workflow`
+	and renders live backend responses
 - the Streamlit workflow remains available as a backend-side fallback surface
-- the new root Next.js application now owns the frontend shell and repository
-	structure for later API integration
 
 The system remains validation-only. It does not run `terraform apply`,
 `terraform destroy`, or any equivalent deploy step.
@@ -80,16 +80,29 @@ GOOGLE_API_KEY="your-key-here"
 GEMINI_MODEL="gemini-3-flash"
 ```
 
+The backend normalizes `gemini-3-flash` to the current Gemini Developer API
+runtime alias automatically, so the configured intent stays stable even when
+the live model name is exposed as `gemini-3-flash-preview`.
+
 If no key is configured, the backend falls back to a safe starter Terraform
 file so the validation loop can still be demonstrated.
 
 ## Run The Project Locally
 
-Run the Next.js frontend scaffold:
+Run the Python workflow API in one terminal:
+
+```bash
+python -m uvicorn backend.api:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the Next.js frontend in a second terminal:
 
 ```bash
 npm run dev
 ```
+
+If your backend is not running on `http://127.0.0.1:8000`, set
+`BACKEND_API_BASE_URL` before starting the frontend.
 
 Run the existing Streamlit workflow from the new backend location:
 
@@ -97,12 +110,12 @@ Run the existing Streamlit workflow from the new backend location:
 streamlit run backend/streamlit_app.py
 ```
 
-The frontend and backend are not API-wired together yet. Sprint 0 establishes
-the repository structure and baseline quality tooling for that later work.
+The Streamlit surface remains useful as a backend-side reference flow, but the
+primary web workflow now runs through the Next.js UI plus the Python API bridge.
 
 ## Verification Commands
 
-The bootstrap verification commands are:
+The current verification commands are:
 
 ```bash
 npm run typecheck

@@ -1,0 +1,74 @@
+export type WorkflowValidationLog = {
+  command: string;
+  return_code: number;
+  stdout: string;
+  stderr: string;
+};
+
+export type WorkflowApiResponse = {
+  request: {
+    prompt: string;
+  };
+  generation: {
+    status: "succeeded" | "fallback";
+    used_fallback: boolean;
+    message: string;
+  };
+  terraform: {
+    generated_code: string;
+    formatted_code: string;
+  };
+  validation: {
+    status: "passed" | "failed";
+    message: string;
+    logs: WorkflowValidationLog[];
+    combined_log: string;
+  };
+  security: {
+    status: string;
+    message: string;
+  };
+  readiness: {
+    is_ready: boolean;
+    status: string;
+    message: string;
+    deploy_hint: string;
+  };
+};
+
+type ErrorPayload = {
+  detail?: string;
+  message?: string;
+};
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as ErrorPayload;
+    return payload.message ?? payload.detail ?? "Workflow request failed.";
+  } catch {
+    return "Workflow request failed.";
+  }
+}
+
+export async function submitWorkflowRequest(
+  prompt: string,
+): Promise<WorkflowApiResponse> {
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    throw new Error("A natural-language infrastructure request is required.");
+  }
+
+  const response = await fetch("/api/workflow", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt: normalizedPrompt }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkflowApiResponse;
+}

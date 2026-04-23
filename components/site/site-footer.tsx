@@ -1,9 +1,9 @@
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      Sprint 1 replaces the placeholder frontend with a real workflow shell. The
-      Python bridge, Checkov gate, and GitHub pull-request delivery still arrive in
-      later transition sprints.
+      Sprint 2 connects the workflow shell to a live Python API bridge. The
+      Checkov gate and GitHub pull-request delivery still arrive in later
+      transition sprints.
     </footer>
   );
 }
