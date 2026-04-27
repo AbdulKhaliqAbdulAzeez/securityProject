@@ -159,7 +159,7 @@ export function WorkflowShell() {
           className="composer-panel"
         >
           <textarea
-            className="workflow-textarea"
+            className={`workflow-textarea ${workflow.isBusy ? "workflow-textarea--generating" : ""}`}
             id="workflow-prompt"
             name="workflow-prompt"
             value={prompt}

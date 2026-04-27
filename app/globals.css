@@ -34,20 +34,14 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: var(--body-font);
-  background:
-    linear-gradient(180deg, rgba(10, 10, 10, 0.8), rgba(18, 18, 18, 0.95)),
-    url("/workflow-grid.svg");
-  background-size: cover, 720px 720px;
+  background: linear-gradient(180deg, rgba(10, 10, 10, 0.8), rgba(18, 18, 18, 0.95));
 }
 
 .site-body {
   margin: 0;
   color: var(--ink);
   font-family: var(--body-font);
-  background:
-    linear-gradient(180deg, rgba(10, 10, 10, 0.8), rgba(18, 18, 18, 0.95)),
-    url("/workflow-grid.svg");
-  background-size: cover, 720px 720px;
+  background: linear-gradient(180deg, rgba(10, 10, 10, 0.8), rgba(18, 18, 18, 0.95));
 }
 
 a {
@@ -125,20 +119,23 @@ a {
   width: 100%;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: 420px 1fr;
+  display: flex;
+  flex-direction: column-reverse;
   height: 100%;
   overflow: hidden;
 }
 
 .workflow-pane-left {
   padding: 2rem;
-  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  border-right: none;
   overflow-y: auto;
   background: rgba(10, 10, 10, 0.4);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  flex-shrink: 0;
+  max-height: 45vh;
 }
 
 .workflow-pane-right {
@@ -147,6 +144,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  flex: 1;
 }
 
 .hero-panel,
@@ -220,7 +218,8 @@ a {
 .button:hover:not(:disabled),
 .scenario-pill:hover,
 .hero-secondary:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.08);
 }
 
 .button:disabled {
@@ -232,6 +231,12 @@ a {
 .hero-primary {
   background: var(--ink);
   color: #0A0A0A;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.button--primary:hover:not(:disabled),
+.hero-primary:hover {
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
 }
 
 .button--secondary,
@@ -239,6 +244,11 @@ a {
   border: 1px solid var(--border);
   color: var(--ink);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.button--secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .button--ghost {
@@ -327,11 +337,13 @@ a {
   font: inherit;
   line-height: 1.6;
   color: var(--ink);
+  transition: all 250ms ease;
 }
 
 .workflow-textarea:focus {
-  outline: 2px solid rgba(17, 94, 89, 0.22);
-  outline-offset: 2px;
+  outline: none;
+  border-color: rgba(6, 182, 212, 0.6);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15), 0 0 20px rgba(139, 92, 246, 0.15);
 }
 
 .scenario-block {
@@ -599,6 +611,15 @@ a {
   .workflow-output-grid {
     grid-template-columns: 1fr;
   }
+  .workflow-page {
+    height: auto;
+    overflow: visible;
+  }
+  .workflow-pane-left {
+    border-top: 1px solid var(--border);
+    border-bottom: none;
+    max-height: none;
+  }
 }
 
 @media (max-width: 720px) {
@@ -701,3 +722,29 @@ a {
   background: var(--border);
   margin: 0 1rem;
 }
+
+/* AI Generation Pulse Animation */
+@keyframes generationPulse {
+  0% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4), 0 0 10px rgba(139, 92, 246, 0.2); border-color: rgba(6, 182, 212, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.1), 0 0 25px rgba(139, 92, 246, 0.5); border-color: rgba(139, 92, 246, 0.6); }
+  100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0), 0 0 10px rgba(139, 92, 246, 0.2); border-color: rgba(6, 182, 212, 0.4); }
+}
+
+.workflow-textarea--generating {
+  animation: generationPulse 2s infinite ease-in-out;
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+/* Fade in animation for feedback cards */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.feedback-card {
+  animation: slideUpFade 300ms ease-out forwards;
+}
+
+.feedback-card:nth-child(1) { animation-delay: 50ms; }
+.feedback-card:nth-child(2) { animation-delay: 150ms; }
+.feedback-card:nth-child(3) { animation-delay: 250ms; }
