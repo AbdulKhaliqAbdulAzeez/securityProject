@@ -8,9 +8,9 @@ standards for the AI-Powered Terraform Architect & Validator project.
 
 ## Purpose Of This Repository
 
-This repository is a dual-stack transition project that is moving from a
-Python Streamlit MVP into a Next.js frontend with a dedicated Python backend
-for Terraform generation and validation.
+This repository is a dual-stack project that has moved from a Python Streamlit
+MVP into a Next.js frontend with a dedicated Python backend for Terraform
+generation and validation.
 
 The product goal matters, but the repository also exists to demonstrate a
 professional orchestration model for AI-assisted software delivery. Durable
@@ -33,14 +33,15 @@ Before doing meaningful work, read these in order:
 
 ## Current Repository State
 
-The repository has completed the `site-foundation` workstream and is now
-executing the `nextjs-platform-transition` workstream.
+The repository has completed the `site-foundation` and
+`nextjs-platform-transition` workstreams.
 
 Current priorities:
 
 - preserve the durable specs, sprint artifacts, and QA records
-- keep the verified Python backend behavior intact while the frontend changes
-- execute transition work one sprint at a time under the active feature spec
+- keep the verified Next.js frontend and Python backend behavior intact
+- define any later expansion through a new governing spec or an approved
+  lightweight change note
 
 ## Non-Negotiable Process Rules
 

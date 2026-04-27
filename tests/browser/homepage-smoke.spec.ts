@@ -60,12 +60,15 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
 
   await page.goto("/");
 
+  await expect(page.getByText(/AI-Powered Terraform Architect/i).first()).toBeVisible();
   await expect(
     page.getByRole("heading", {
-      name: /Stage generation, validation, security review, and GitOps delivery from one page\./i,
+      name: /Command Center/i,
     }),
   ).toBeVisible();
-  await expect(page.getByLabel("Infrastructure request")).toBeVisible();
+  await expect(page.getByText(/Checkov live/i)).toBeVisible();
+  await expect(page.getByText(/GitOps live/i)).toBeVisible();
+  await expect(page.getByPlaceholder(/Describe the infrastructure you want/i)).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Deploy to GitHub/i }),
   ).toBeDisabled();

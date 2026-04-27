@@ -2,7 +2,7 @@
 
 ## Status
 
-In Progress
+Complete
 
 ## Problem Statement
 
@@ -167,11 +167,6 @@ npm run typecheck
 npm run lint
 npm run test
 npm run build
-```
-
-Browser checks should be added once the workflow page is live:
-
-```bash
 npm run test:browser
 ```
 

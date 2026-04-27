@@ -134,40 +134,28 @@ export function WorkflowShell() {
 
   return (
     <main className="workflow-page">
-      <section className="hero-panel">
-        <p className="hero-eyebrow">Sprint 4 GitOps Delivery</p>
-        <h1 className="hero-title">
-          Stage generation, validation, security review, and GitOps delivery from one page.
-        </h1>
-        <p className="hero-copy">
-          This shell now calls the Python backend through a stable workflow API.
-          Prompt entry, formatted Terraform output, Terraform logs, Checkov
-          findings, deploy readiness, and pull-request delivery remain visible in one deliberate
-          frontend surface while the no-deploy safety boundary stays intact.
-        </p>
-        <div className="hero-actions">
-          <span className="hero-primary">Live Python generation, validation, Checkov scanning, and PR delivery</span>
-          <span className="hero-secondary">Deploy stays gated until the workflow is ready</span>
-        </div>
-      </section>
+      <aside className="workflow-pane-left">
+        <section className="hero-panel" style={{ padding: '1.5rem', borderRadius: '1rem' }}>
+          <p className="hero-eyebrow">AI-Powered DevOps</p>
+          <h1 className="hero-title" style={{ fontSize: '2rem', marginTop: '0.2rem' }}>
+            Command Center
+          </h1>
+          <p className="hero-copy" style={{ fontSize: '0.95rem', marginTop: '0.5rem' }}>
+            Stage generation, validation, security review, and GitOps delivery from one workspace.
+          </p>
+        </section>
 
-      {notice ? (
-        <p className={`notice notice--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
-          {notice.message}
-        </p>
-      ) : null}
+        {notice ? (
+          <p className={`notice notice--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
+            {notice.message}
+          </p>
+        ) : null}
 
-      <section className="workflow-layout">
         <Panel
           eyebrow="Prompt composer"
-          title="Run the infrastructure request"
-          description="The frontend now submits prompts through the Python workflow API instead of staging a local preview state."
+          title="Infrastructure request"
           className="composer-panel"
         >
-          <label className="composer-label" htmlFor="workflow-prompt">
-            <span>Infrastructure request</span>
-            <span className="composer-caption">AWS-only validation and security workflow</span>
-          </label>
           <textarea
             className="workflow-textarea"
             id="workflow-prompt"
@@ -177,11 +165,6 @@ export function WorkflowShell() {
             placeholder="Describe the infrastructure you want the backend to generate and validate."
           />
 
-          <p className="composer-caption">
-            Keep the Python backend service running locally when testing the live
-            generation, validation, Checkov, and GitOps path end to end.
-          </p>
-
           <div className="composer-actions">
             <Button disabled={workflow.isBusy} onClick={handleRunWorkflow}>
               {workflow.isBusy ? "Running workflow..." : "Run workflow"}
@@ -190,98 +173,94 @@ export function WorkflowShell() {
               Use sample prompt
             </Button>
             <Button onClick={handleResetShell} variant="ghost">
-              Reset shell
+              Reset
             </Button>
           </div>
         </Panel>
+      </aside>
 
+      <section className="workflow-pane-right">
         <Panel
           eyebrow="Execution status"
-          title="Three gates, one visible state model"
-          description="Generation, Terraform validation, and Checkov scanning each keep their own region so backend outcomes stay readable."
+          title="Workflow Status"
         >
           <WorkflowStatusList steps={workflow.steps} />
         </Panel>
-      </section>
 
-      <section className="workflow-output-grid">
+        <section className="workflow-output-grid">
+          <Panel
+            eyebrow="Generated Terraform"
+            title="Code review"
+          >
+            <div className="code-panel">
+              <pre aria-label="Generated Terraform output">{workflow.terraform}</pre>
+            </div>
+          </Panel>
+
+          <Panel
+            eyebrow="Backend feedback"
+            title="Notes & Findings"
+          >
+            <ul className="feedback-list" aria-label="Backend feedback panels">
+              {workflow.feedbackSections.map((section) => (
+                <li className="feedback-card" key={section.id}>
+                  <span className="feedback-card__eyebrow">{section.label}</span>
+                  <p className="feedback-card__title">{section.title}</p>
+                  <p className="feedback-card__copy">{section.body}</p>
+                  {section.items?.length ? (
+                    <ul className="feedback-card__items" aria-label={`${section.label} findings`}>
+                      {section.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </section>
+
         <Panel
-          eyebrow="Generated Terraform"
-          title="Code review panel"
-          description="The validated Terraform stays separate from logs so operators can review code without losing backend feedback."
+          eyebrow="Deploy readiness"
+          title={workflow.readiness.title}
+          description={workflow.readiness.detail}
+          className="readiness-panel"
         >
-          <div className="code-panel">
-            <p className="code-panel__caption">
-              The Python backend returns generated Terraform and the validation pass returns the formatted result shown here.
+          <div className={`readiness-banner readiness-banner--${workflow.readiness.tone}`}>
+            <span className="readiness-banner__eyebrow">{workflow.readiness.label}</span>
+            <p className="readiness-banner__title">{workflow.readiness.summary}</p>
+            <p className="readiness-banner__copy">{workflow.readiness.deployHint}</p>
+          </div>
+
+          <div className="readiness-actions">
+            <Button disabled={deployButtonDisabled} onClick={handleDeployToGitHub}>
+              {isDeploying ? "Deploying..." : "Deploy to GitHub"}
+            </Button>
+            <p className="readiness-note">
+              {readinessNote}
             </p>
-            <pre aria-label="Generated Terraform output">{workflow.terraform}</pre>
           </div>
-        </Panel>
 
-        <Panel
-          eyebrow="Backend feedback"
-          title="Generation, validation, and security notes"
-          description="Feedback remains split by concern so generation issues, Terraform failures, and Checkov blockers do not collapse into one generic output panel."
-        >
-          <ul className="feedback-list" aria-label="Backend feedback panels">
-            {workflow.feedbackSections.map((section) => (
-              <li className="feedback-card" key={section.id}>
-                <span className="feedback-card__eyebrow">{section.label}</span>
-                <p className="feedback-card__title">{section.title}</p>
-                <p className="feedback-card__copy">{section.body}</p>
-                {section.items?.length ? (
-                  <ul className="feedback-card__items" aria-label={`${section.label} findings`}>
-                    {section.items.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
-              </li>
-            ))}
-          </ul>
+          {deployment ? (
+            <div className={`deploy-result deploy-result--${deployment.status}`}>
+              <span className="readiness-banner__eyebrow">GitOps delivery</span>
+              <p className="deploy-result__title">{deployment.message}</p>
+              {deployment.branchName ? (
+                <p className="deploy-result__copy">Branch: {deployment.branchName}</p>
+              ) : null}
+              {deployment.pullRequestUrl ? (
+                <p className="deploy-result__copy">
+                  Pull request:{" "}
+                  <a href={deployment.pullRequestUrl} rel="noreferrer" target="_blank">
+                    {deployment.pullRequestUrl}
+                  </a>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </Panel>
       </section>
-
-      <Panel
-        eyebrow="Deploy readiness"
-        title={workflow.readiness.title}
-        description={workflow.readiness.detail}
-        className="readiness-panel"
-      >
-        <div className={`readiness-banner readiness-banner--${workflow.readiness.tone}`}>
-          <span className="readiness-banner__eyebrow">{workflow.readiness.label}</span>
-          <p className="readiness-banner__title">{workflow.readiness.summary}</p>
-          <p className="readiness-banner__copy">{workflow.readiness.deployHint}</p>
-        </div>
-
-        <div className="readiness-actions">
-          <Button disabled={deployButtonDisabled} onClick={handleDeployToGitHub}>
-            {isDeploying ? "Deploying..." : "Deploy to GitHub"}
-          </Button>
-          <p className="readiness-note">
-            {readinessNote}
-          </p>
-        </div>
-
-        {deployment ? (
-          <div className={`deploy-result deploy-result--${deployment.status}`}>
-            <span className="readiness-banner__eyebrow">GitOps delivery</span>
-            <p className="deploy-result__title">{deployment.message}</p>
-            {deployment.branchName ? (
-              <p className="deploy-result__copy">Branch: {deployment.branchName}</p>
-            ) : null}
-            {deployment.pullRequestUrl ? (
-              <p className="deploy-result__copy">
-                Pull request:{" "}
-                <a href={deployment.pullRequestUrl} rel="noreferrer" target="_blank">
-                  {deployment.pullRequestUrl}
-                </a>
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-      </Panel>
     </main>
   );
 }

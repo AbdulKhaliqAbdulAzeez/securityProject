@@ -1,10 +1,10 @@
 # AI-Powered Terraform Architect & Validator
 
-This repository is transitioning from a Python-only Streamlit MVP into a
-dual-stack project with a root Next.js frontend and a dedicated Python backend.
-The current sprint exposes the verified Terraform generation, validation, and
-Checkov-backed security scanning modules plus GitOps pull-request delivery
-through a Python API that the Next.js frontend can call directly.
+This repository has completed its transition from a Python-only Streamlit MVP
+into a dual-stack project with a root Next.js frontend and a dedicated Python
+backend. The live application exposes the verified Terraform generation,
+validation, Checkov-backed security scanning, and GitOps pull-request delivery
+modules through a Python API that the Next.js frontend can call directly.
 
 ## Current Product Surface
 
@@ -34,7 +34,7 @@ deploy step. The GitOps path only creates a review branch and pull request.
 - `lib/` - shared frontend data and helper modules
 - `public/` - static assets used by the Next.js app
 - `tests/app/` - frontend unit and component tests run with Vitest
-- `tests/browser/` - reserved browser-test surface for later sprints
+- `tests/browser/` - browser smoke and end-to-end checks for the live workflow shell
 - `tests/python/` - backend pytest coverage
 - `docs/foundation/` - durable operating rules, quality rules, and workflow docs
 - `docs/_specs/` - governing spec and sprint artifacts for implementation
@@ -154,6 +154,7 @@ npm run typecheck
 npm run lint
 npm run test
 npm run build
+npm run test:browser
 ruff format --check .
 ruff check .
 pytest

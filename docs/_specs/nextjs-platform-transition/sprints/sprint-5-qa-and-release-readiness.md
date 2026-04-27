@@ -62,4 +62,19 @@ safe GitOps sandbox flow behave as documented.
 
 ## QA Deviations
 
-- use this section to record any verified mismatch and the repair applied
+- `README.md` underreported the live browser verification surface and still
+   described `tests/browser/` as reserved for later sprints; Sprint 5 QA updated
+   the landing docs to reflect the live workflow smoke coverage and the full
+   verification command set.
+- `agent.md`, `docs/_specs/README.md`, and
+   `docs/_specs/nextjs-platform-transition/spec.md` still described the
+   transition workstream as in progress; Sprint 5 QA updated those status
+   surfaces to reflect the completed workstream.
+- `components/site/site-header.tsx` and `components/site/site-footer.tsx` still
+   advertised Sprint 2 and future Checkov/GitOps work; Sprint 5 QA updated the
+   live shell copy and added regression coverage so the shared frame matches the
+   completed workflow.
+- A live GitOps sandbox pull-request creation could not be executed in this
+   environment because `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, and
+   `GITHUB_BASE_BRANCH` were not configured. Sprint 5 QA verified the documented
+   server-side configuration error path instead.

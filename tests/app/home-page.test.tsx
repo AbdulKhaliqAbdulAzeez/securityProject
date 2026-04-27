@@ -110,10 +110,10 @@ describe("Home page", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /Stage generation, validation, security review, and GitOps delivery from one page\./i,
+        name: /Command Center/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/Infrastructure request/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Describe the infrastructure you want/i)).toBeInTheDocument();
     expect(screen.getByText(/Waiting on validation/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeDisabled();
     expect(
@@ -209,7 +209,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByLabelText(/Infrastructure request/i), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe the infrastructure you want/i), {
       target: { value: "Create infrastructure" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
@@ -393,7 +393,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByLabelText(/Infrastructure request/i), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe the infrastructure you want/i), {
       target: { value: "Create infrastructure" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
