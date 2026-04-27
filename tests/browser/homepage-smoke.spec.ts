@@ -77,14 +77,18 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
   await page.getByRole("button", { name: /Run workflow/i }).click();
 
   await expect(page.getByText(/Ready for GitOps handoff/i)).toBeVisible();
+
+  await page.getByRole("tab", { name: /Validation Logs/i }).click();
   await expect(
-    page.getByLabel("Backend feedback panels").getByText(/Terraform validation passed\./i),
+    page.getByLabel("Validation feedback").getByText(/Terraform validation passed\./i),
   ).toBeVisible();
   await expect(
     page
-      .getByLabel("Backend feedback panels")
+      .getByLabel("Validation feedback")
       .getByText(/Terraform generated successfully from the Gemini-backed model\./i),
   ).toBeVisible();
+
+  await page.getByRole("tab", { name: /Generated Code/i }).click();
   await expect(page.getByLabel("Generated Terraform output")).toContainText(
     'resource "aws_s3_bucket" "demo" {}',
   );

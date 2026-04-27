@@ -114,7 +114,7 @@ describe("Home page", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Describe the infrastructure you want/i)).toBeInTheDocument();
-    expect(screen.getByText(/Waiting on validation/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Terraform validation/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeDisabled();
     expect(
       screen.getByLabelText(/Generated Terraform output/i),
@@ -129,7 +129,7 @@ describe("Home page", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       /Enter an infrastructure request before running the workflow\./i,
     );
-    expect(screen.getByText(/Waiting for prompt/i)).toBeInTheDocument();
+
   });
 
   it("renders a clean backend scan as ready for GitOps handoff", async () => {
@@ -150,17 +150,20 @@ describe("Home page", () => {
     expect(await screen.findByText(/^Ready$/i)).toBeInTheDocument();
     expect(screen.getByText(/Ready for GitOps handoff/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^Generation$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^Validation$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^Security$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Terraform validation/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Security scan/i).length).toBeGreaterThan(0);
     expect(screen.getByLabelText(/Generated Terraform output/i)).toHaveTextContent(
       /resource "aws_s3_bucket" "demo" \{\}/i,
     );
+    fireEvent.click(screen.getByRole("tab", { name: /Validation Logs/i }));
     expect(screen.getAllByText(/Terraform validation passed\./i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Success!/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Security Findings/i }));
     expect(
       screen.getAllByText(/Checkov security scan passed with no blocking findings\./i)
         .length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText(/Success!/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
   });
 
@@ -216,13 +219,13 @@ describe("Home page", () => {
 
     expect(await screen.findByText(/Blocked by validation/i)).toBeInTheDocument();
     expect(screen.getByText(/Not ready to deploy/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Validation Logs/i }));
     expect(screen.getByText(/Fallback Terraform returned/i)).toBeInTheDocument();
     expect(
       screen.getAllByText(/Terraform validation failed\. Review the command logs below\./i)
         .length,
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Terraform CLI not found on PATH\./i)).toBeInTheDocument();
-    expect(screen.getByText(/^Failed$/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeDisabled();
   });
 
@@ -271,6 +274,7 @@ describe("Home page", () => {
     fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
 
     expect(await screen.findByText(/Blocked by security/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Security Findings/i }));
     expect(screen.getByText(/Checkov reported 1 blocking finding/i)).toBeInTheDocument();
     expect(screen.getByText(/CKV_AWS_20:/i)).toBeInTheDocument();
     expect(screen.getByText(/aws_s3_bucket\.demo/i)).toBeInTheDocument();
@@ -311,6 +315,7 @@ describe("Home page", () => {
     fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
 
     expect(await screen.findByText(/Blocked by scanner setup/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Security Findings/i }));
     expect(screen.getByText(/Checkov setup required/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Checkov CLI not found on PATH/i).length).toBeGreaterThan(0);
   });
@@ -402,6 +407,7 @@ describe("Home page", () => {
       /Python backend is unavailable/i,
     );
     expect(screen.getByText(/Blocked by backend error/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Validation Logs/i }));
     expect(screen.getByText(/^Backend request failed$/i)).toBeInTheDocument();
   });
 });

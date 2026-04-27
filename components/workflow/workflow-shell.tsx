@@ -4,7 +4,8 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
-import { WorkflowStatusList } from "@/components/workflow/workflow-status-list";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { WorkflowProgressRail } from "@/components/workflow/workflow-progress-rail";
 import {
   createRunningWorkflowViewModel,
   createWorkflowFailureViewModel,
@@ -33,6 +34,7 @@ export function WorkflowShell() {
   const [workflow, setWorkflow] = useState<WorkflowViewModel>(idleWorkflowViewModel);
   const [notice, setNotice] = useState<WorkflowNotice | null>(null);
   const [deployment, setDeployment] = useState<DeploymentState | null>(null);
+  const [activeTab, setActiveTab] = useState("code");
 
   async function handleRunWorkflow() {
     if (!prompt.trim()) {
@@ -180,46 +182,56 @@ export function WorkflowShell() {
       </aside>
 
       <section className="workflow-pane-right">
-        <Panel
-          eyebrow="Execution status"
-          title="Workflow Status"
-        >
-          <WorkflowStatusList steps={workflow.steps} />
+        <WorkflowProgressRail steps={workflow.steps} deploymentStatus={deployment?.status} />
+
+        <Panel title="Workspace Output" className="workspace-panel">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="code">Generated Code</TabsTrigger>
+              <TabsTrigger value="validation">Validation Logs</TabsTrigger>
+              <TabsTrigger value="security">Security Findings</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="code">
+              <div className="code-panel">
+                <pre aria-label="Generated Terraform output">{workflow.terraform}</pre>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="validation">
+              <ul className="feedback-list" aria-label="Validation feedback">
+                {workflow.feedbackSections.filter(s => s.id === "validation" || s.id === "generation").map((section) => (
+                  <li className="feedback-card" key={section.id}>
+                    <span className="feedback-card__eyebrow">{section.label}</span>
+                    <p className="feedback-card__title">{section.title}</p>
+                    <p className="feedback-card__copy">{section.body}</p>
+                    {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
+                  </li>
+                ))}
+              </ul>
+            </TabsContent>
+
+            <TabsContent value="security">
+              <ul className="feedback-list" aria-label="Security feedback">
+                {workflow.feedbackSections.filter(s => s.id === "security").map((section) => (
+                  <li className="feedback-card" key={section.id}>
+                    <span className="feedback-card__eyebrow">{section.label}</span>
+                    <p className="feedback-card__title">{section.title}</p>
+                    <p className="feedback-card__copy">{section.body}</p>
+                    {section.items?.length ? (
+                      <ul className="feedback-card__items" aria-label={`${section.label} findings`}>
+                        {section.items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
+                  </li>
+                ))}
+              </ul>
+            </TabsContent>
+          </Tabs>
         </Panel>
-
-        <section className="workflow-output-grid">
-          <Panel
-            eyebrow="Generated Terraform"
-            title="Code review"
-          >
-            <div className="code-panel">
-              <pre aria-label="Generated Terraform output">{workflow.terraform}</pre>
-            </div>
-          </Panel>
-
-          <Panel
-            eyebrow="Backend feedback"
-            title="Notes & Findings"
-          >
-            <ul className="feedback-list" aria-label="Backend feedback panels">
-              {workflow.feedbackSections.map((section) => (
-                <li className="feedback-card" key={section.id}>
-                  <span className="feedback-card__eyebrow">{section.label}</span>
-                  <p className="feedback-card__title">{section.title}</p>
-                  <p className="feedback-card__copy">{section.body}</p>
-                  {section.items?.length ? (
-                    <ul className="feedback-card__items" aria-label={`${section.label} findings`}>
-                      {section.items.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        </section>
 
         <Panel
           eyebrow="Deploy readiness"
