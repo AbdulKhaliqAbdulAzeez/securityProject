@@ -1,7 +1,11 @@
 export const defaultInfrastructurePrompt =
   "Create a highly available AWS EC2 web server with an application load balancer and a security group that allows HTTP traffic.";
 
-import type { WorkflowApiResponse } from "@/lib/workflow-api";
+import type {
+  WorkflowApiResponse,
+  WorkflowSecurityFinding,
+  WorkflowValidationLog,
+} from "@/lib/workflow-api";
 
 export type StatusTone = "idle" | "active" | "warning" | "ready";
 export type NoticeTone = "info" | "error";
@@ -20,6 +24,7 @@ export type FeedbackSection = {
   title: string;
   body: string;
   log?: string;
+  items?: string[];
 };
 
 export type WorkflowReadiness = {
@@ -62,9 +67,9 @@ export const idleWorkflowViewModel: WorkflowViewModel = {
     {
       id: "security",
       label: "Security scan",
-      status: "Queued for Sprint 3",
+      status: "Waiting on validation",
       detail:
-        "The shell already reserves a blocking scan region even though Checkov is not wired yet.",
+        "Checkov findings will appear after Terraform generation succeeds and validation completes.",
       tone: "idle",
     },
   ],
@@ -86,9 +91,9 @@ export const idleWorkflowViewModel: WorkflowViewModel = {
     {
       id: "security",
       label: "Security",
-      title: "Security feedback reserved",
+      title: "Security findings will appear here",
       body:
-        "The Checkov gate is intentionally visible before implementation so readiness rules are not hidden in a later sprint.",
+        "Successful scans, blocking Checkov findings, and local scanner setup failures will be summarized here.",
     },
   ],
   readiness: {
@@ -106,6 +111,103 @@ export const idleWorkflowViewModel: WorkflowViewModel = {
 
 function createLogTitle(status: WorkflowApiResponse["validation"]["status"]): string {
   return status === "passed" ? "Validation logs captured" : "Validation errors captured";
+}
+
+function createCommandLog(
+  log: WorkflowValidationLog | null | undefined,
+): string | undefined {
+  if (!log) {
+    return undefined;
+  }
+
+  const stdoutSection = log.stdout ? `stdout:\n${log.stdout}` : "stdout:";
+  const stderrSection = log.stderr ? `stderr:\n${log.stderr}` : "stderr:";
+
+  return [
+    `$ ${log.command}`,
+    `exit code: ${log.return_code}`,
+    stdoutSection,
+    stderrSection,
+  ].join("\n\n");
+}
+
+function formatSecurityFinding(finding: WorkflowSecurityFinding): string {
+  const location = finding.file_line_range
+    ? `${finding.file_path}:${finding.file_line_range}`
+    : finding.file_path;
+  const resource = finding.resource ? ` Resource: ${finding.resource}.` : "";
+  const guideline = finding.guideline ? ` Guidance: ${finding.guideline}` : "";
+
+  return `${finding.check_id}: ${finding.check_name} at ${location}.${resource}${guideline}`;
+}
+
+function createSecurityStep(
+  security: WorkflowApiResponse["security"],
+): Pick<WorkflowStep, "status" | "detail" | "tone"> {
+  switch (security.status) {
+    case "passed":
+      return { status: "Passed", detail: security.message, tone: "ready" };
+    case "failed":
+      return { status: "Failed", detail: security.message, tone: "warning" };
+    case "scanner_unavailable":
+      return { status: "Setup required", detail: security.message, tone: "warning" };
+    case "scan_error":
+      return { status: "Scan error", detail: security.message, tone: "warning" };
+    case "not_run":
+      return { status: "Not run", detail: security.message, tone: "idle" };
+    default:
+      return { status: security.status, detail: security.message, tone: "warning" };
+  }
+}
+
+function createSecurityFeedbackSection(
+  security: WorkflowApiResponse["security"],
+): FeedbackSection {
+  switch (security.status) {
+    case "passed":
+      return {
+        id: "security",
+        label: "Security",
+        title: "Checkov scan passed",
+        body: security.message,
+      };
+    case "failed": {
+      const findingCount = security.findings.length;
+      const noun = findingCount === 1 ? "finding" : "findings";
+
+      return {
+        id: "security",
+        label: "Security",
+        title: `Checkov reported ${findingCount} blocking ${noun}`,
+        body: security.message,
+        items: security.findings.map(formatSecurityFinding),
+      };
+    }
+    case "scanner_unavailable":
+      return {
+        id: "security",
+        label: "Security",
+        title: "Checkov setup required",
+        body: security.message,
+        log: createCommandLog(security.log),
+      };
+    case "scan_error":
+      return {
+        id: "security",
+        label: "Security",
+        title: "Checkov scan failed",
+        body: security.message,
+        log: createCommandLog(security.log),
+      };
+    case "not_run":
+    default:
+      return {
+        id: "security",
+        label: "Security",
+        title: "Security scan did not run",
+        body: security.message,
+      };
+  }
 }
 
 function createReadinessState(
@@ -129,6 +231,40 @@ function createReadinessState(
       summary: response.readiness.message,
       detail:
         "Resolve the Terraform validation failures before the workflow can advance to a security review gate.",
+      deployHint: response.readiness.deploy_hint,
+      tone: "warning",
+    };
+  }
+
+  if (response.security.status === "failed") {
+    return {
+      label: "Blocked by security",
+      title: "Not ready to deploy",
+      summary: response.readiness.message,
+      detail:
+        "Resolve the Checkov findings listed below before treating the Terraform as ready for handoff.",
+      deployHint: response.readiness.deploy_hint,
+      tone: "warning",
+    };
+  }
+
+  if (response.security.status === "scanner_unavailable") {
+    return {
+      label: "Blocked by scanner setup",
+      title: "Not ready to deploy",
+      summary: response.readiness.message,
+      detail: response.security.message,
+      deployHint: response.readiness.deploy_hint,
+      tone: "warning",
+    };
+  }
+
+  if (response.security.status === "scan_error") {
+    return {
+      label: "Blocked by scan failure",
+      title: "Not ready to deploy",
+      summary: response.readiness.message,
+      detail: response.security.message,
       deployHint: response.readiness.deploy_hint,
       tone: "warning",
     };
@@ -166,9 +302,8 @@ export function createRunningWorkflowViewModel(prompt: string): WorkflowViewMode
       {
         id: "security",
         label: "Security scan",
-        status: "Queued for Sprint 3",
-        detail:
-          "Security scanning remains visible in the UI even though the backend contract is not wired yet.",
+        status: "Waiting on validation",
+        detail: "Checkov will run after Terraform validation succeeds.",
         tone: "idle",
       },
     ],
@@ -190,9 +325,9 @@ export function createRunningWorkflowViewModel(prompt: string): WorkflowViewMode
       {
         id: "security",
         label: "Security",
-        title: "Security gate remains queued",
+        title: "Security scan pending",
         body:
-          "The workflow still reserves a security gate before any deploy action becomes available.",
+          "The backend will run Checkov after generation and Terraform validation complete.",
       },
     ],
     readiness: {
@@ -216,6 +351,7 @@ export function createWorkflowViewModelFromResponse(
   const generationStatus = response.generation.used_fallback ? "Fallback used" : "Complete";
   const validationTone = response.validation.status === "passed" ? "ready" : "warning";
   const validationStatus = response.validation.status === "passed" ? "Passed" : "Failed";
+  const securityStep = createSecurityStep(response.security);
 
   return {
     terraform:
@@ -238,9 +374,9 @@ export function createWorkflowViewModelFromResponse(
       {
         id: "security",
         label: "Security scan",
-        status: "Queued for Sprint 3",
-        detail: response.security.message,
-        tone: "idle",
+        status: securityStep.status,
+        detail: securityStep.detail,
+        tone: securityStep.tone,
       },
     ],
     feedbackSections: [
@@ -257,12 +393,7 @@ export function createWorkflowViewModelFromResponse(
         body: response.validation.message,
         log: response.validation.combined_log,
       },
-      {
-        id: "security",
-        label: "Security",
-        title: "Security gate still pending",
-        body: response.security.message,
-      },
+      createSecurityFeedbackSection(response.security),
     ],
     readiness: createReadinessState(response),
     isBusy: false,
@@ -297,9 +428,9 @@ export function createWorkflowFailureViewModel(
       {
         id: "security",
         label: "Security scan",
-        status: "Queued for Sprint 3",
+        status: "Not run",
         detail:
-          "Security scanning remains unavailable until Sprint 3 wires the Checkov gate.",
+          "Security scanning did not start because the backend request failed before validation completed.",
         tone: "idle",
       },
     ],
@@ -319,9 +450,9 @@ export function createWorkflowFailureViewModel(
       {
         id: "security",
         label: "Security",
-        title: "Security gate still pending",
+        title: "Security scan did not run",
         body:
-          "The deploy gate remains blocked until the backend succeeds and the later security sprint is implemented.",
+          "Checkov could not start because the backend request failed before Terraform validation completed.",
       },
     ],
     readiness: {

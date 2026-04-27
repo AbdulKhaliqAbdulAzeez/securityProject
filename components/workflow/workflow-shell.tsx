@@ -45,7 +45,7 @@ export function WorkflowShell() {
       setWorkflow(createWorkflowViewModelFromResponse(response));
       setNotice({
         message:
-          "Backend response received. Review the formatted Terraform and validation logs below.",
+          "Backend response received. Review the formatted Terraform, validation logs, and security findings below.",
         tone: "info",
       });
     } catch (error) {
@@ -75,18 +75,18 @@ export function WorkflowShell() {
   return (
     <main className="workflow-page">
       <section className="hero-panel">
-        <p className="hero-eyebrow">Sprint 2 Python API Bridge</p>
+        <p className="hero-eyebrow">Sprint 3 Checkov Gate</p>
         <h1 className="hero-title">
           Stage generation, validation, and security review from one page.
         </h1>
         <p className="hero-copy">
           This shell now calls the Python backend through a stable workflow API.
-          Prompt entry, formatted Terraform output, validation logs, and deploy
-          readiness remain visible in one deliberate frontend surface while the
-          no-deploy safety boundary stays intact.
+          Prompt entry, formatted Terraform output, Terraform logs, Checkov
+          findings, and deploy readiness remain visible in one deliberate
+          frontend surface while the no-deploy safety boundary stays intact.
         </p>
         <div className="hero-actions">
-          <span className="hero-primary">Live Python generation and validation</span>
+          <span className="hero-primary">Live Python generation, validation, and Checkov scanning</span>
           <span className="hero-secondary">Deploy stays disabled until GitOps lands</span>
         </div>
       </section>
@@ -106,7 +106,7 @@ export function WorkflowShell() {
         >
           <label className="composer-label" htmlFor="workflow-prompt">
             <span>Infrastructure request</span>
-            <span className="composer-caption">AWS-only validation workflow</span>
+            <span className="composer-caption">AWS-only validation and security workflow</span>
           </label>
           <textarea
             className="workflow-textarea"
@@ -119,7 +119,7 @@ export function WorkflowShell() {
 
           <p className="composer-caption">
             Keep the Python backend service running locally when testing the live
-            generation and validation path end to end.
+            generation, validation, and Checkov path end to end.
           </p>
 
           <div className="composer-actions">
@@ -138,7 +138,7 @@ export function WorkflowShell() {
         <Panel
           eyebrow="Execution status"
           title="Three gates, one visible state model"
-          description="Generation, Terraform validation, and future security scanning each keep their own region so backend outcomes stay readable."
+          description="Generation, Terraform validation, and Checkov scanning each keep their own region so backend outcomes stay readable."
         >
           <WorkflowStatusList steps={workflow.steps} />
         </Panel>
@@ -161,7 +161,7 @@ export function WorkflowShell() {
         <Panel
           eyebrow="Backend feedback"
           title="Generation, validation, and security notes"
-          description="Feedback remains split by concern so generation issues, Terraform failures, and security blockers do not collapse into one generic output panel."
+          description="Feedback remains split by concern so generation issues, Terraform failures, and Checkov blockers do not collapse into one generic output panel."
         >
           <ul className="feedback-list" aria-label="Backend feedback panels">
             {workflow.feedbackSections.map((section) => (
@@ -169,6 +169,13 @@ export function WorkflowShell() {
                 <span className="feedback-card__eyebrow">{section.label}</span>
                 <p className="feedback-card__title">{section.title}</p>
                 <p className="feedback-card__copy">{section.body}</p>
+                {section.items?.length ? (
+                  <ul className="feedback-card__items" aria-label={`${section.label} findings`}>
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {section.log ? <pre className="feedback-card__log">{section.log}</pre> : null}
               </li>
             ))}

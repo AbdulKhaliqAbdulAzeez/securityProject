@@ -425,6 +425,16 @@ a {
   background: rgba(255, 255, 255, 0.56);
 }
 
+.feedback-card__items {
+  margin: 0.85rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--ink);
+}
+
+.feedback-card__items li + li {
+  margin-top: 0.55rem;
+}
+
 .feedback-card__log {
   margin: 0.85rem 0 0;
   overflow-x: auto;

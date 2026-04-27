@@ -5,6 +5,15 @@ export type WorkflowValidationLog = {
   stderr: string;
 };
 
+export type WorkflowSecurityFinding = {
+  check_id: string;
+  check_name: string;
+  resource: string;
+  file_path: string;
+  file_line_range: string;
+  guideline: string;
+};
+
 export type WorkflowApiResponse = {
   request: {
     prompt: string;
@@ -25,8 +34,15 @@ export type WorkflowApiResponse = {
     combined_log: string;
   };
   security: {
-    status: string;
+    status:
+      | "passed"
+      | "failed"
+      | "not_run"
+      | "scanner_unavailable"
+      | "scan_error";
     message: string;
+    findings: WorkflowSecurityFinding[];
+    log: WorkflowValidationLog | null;
   };
   readiness: {
     is_ready: boolean;

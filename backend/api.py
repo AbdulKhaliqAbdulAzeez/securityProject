@@ -42,9 +42,20 @@ class ValidationPayload(BaseModel):
     combined_log: str
 
 
+class SecurityFindingPayload(BaseModel):
+    check_id: str
+    check_name: str
+    resource: str
+    file_path: str
+    file_line_range: str
+    guideline: str
+
+
 class SecurityPayload(BaseModel):
     status: str
     message: str
+    findings: list[SecurityFindingPayload]
+    log: ValidationLogPayload | None
 
 
 class ReadinessPayload(BaseModel):
@@ -66,6 +77,7 @@ class WorkflowResponse(BaseModel):
 def build_workflow_response(prompt: str) -> WorkflowResponse:
     generation_result = generate_terraform_result(prompt)
     validation_result = validate_terraform(generation_result.terraform)
+    security_result = validation_result.security_scan
 
     validation_status = "passed" if validation_result.success else "failed"
     validation_message = (
@@ -75,13 +87,36 @@ def build_workflow_response(prompt: str) -> WorkflowResponse:
     )
 
     if validation_result.success:
-        readiness_status = "pending_security"
-        readiness_message = (
-            "Terraform validation passed, but deployment remains blocked until "
-            "Sprint 3 "
-            "adds security scanning."
-        )
+        if security_result.status == "passed":
+            readiness_is_ready = True
+            readiness_status = "ready"
+            readiness_message = (
+                "Terraform validation and Checkov security scanning passed. "
+                "This document is ready for the later GitOps handoff."
+            )
+        elif security_result.status == "failed":
+            readiness_is_ready = False
+            readiness_status = "blocked_by_security"
+            readiness_message = (
+                "Checkov reported blocking security findings, so deployment "
+                "remains blocked until the issues are resolved."
+            )
+        elif security_result.status == "scanner_unavailable":
+            readiness_is_ready = False
+            readiness_status = "blocked_by_security_setup"
+            readiness_message = (
+                "Terraform validation passed, but security scanning is blocked "
+                "until Checkov is installed locally."
+            )
+        else:
+            readiness_is_ready = False
+            readiness_status = "blocked_by_security_scan"
+            readiness_message = (
+                "Terraform validation passed, but the Checkov scan did not "
+                "complete successfully."
+            )
     else:
+        readiness_is_ready = False
         readiness_status = "blocked_by_validation"
         readiness_message = (
             "Terraform validation failed, so deployment remains blocked until the "
@@ -110,19 +145,25 @@ def build_workflow_response(prompt: str) -> WorkflowResponse:
             combined_log=validation_result.combined_log(),
         ),
         security=SecurityPayload(
-            status="queued",
-            message=(
-                "Security scanning is not wired yet. Sprint 3 will add Checkov and "
-                "block readiness on findings."
+            status=security_result.status,
+            message=security_result.message,
+            findings=[
+                SecurityFindingPayload(**asdict(finding))
+                for finding in security_result.findings
+            ],
+            log=(
+                ValidationLogPayload(**asdict(security_result.log))
+                if security_result.log is not None
+                else None
             ),
         ),
         readiness=ReadinessPayload(
-            is_ready=False,
+            is_ready=readiness_is_ready,
             status=readiness_status,
             message=readiness_message,
             deploy_hint=(
-                "Deploy to GitHub remains disabled until Sprint 3 adds security "
-                "scanning and Sprint 4 adds GitOps delivery."
+                "Deploy to GitHub remains disabled until Sprint 4 adds GitOps "
+                "delivery, even when validation and security scanning pass."
             ),
         ),
     )

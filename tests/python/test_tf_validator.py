@@ -8,6 +8,16 @@ import pytest
 from backend import tf_validator
 
 
+def fake_which(command: str, path: str | None = None) -> str | None:
+    if command == "terraform":
+        return "/usr/bin/terraform"
+
+    if command == "checkov" and path is None:
+        return "/usr/bin/checkov"
+
+    return None
+
+
 def test_command_log_render_includes_all_sections() -> None:
     log = tf_validator.CommandLog(
         command="terraform fmt main.tf",
@@ -27,7 +37,7 @@ def test_validate_terraform_rejects_empty_input() -> None:
 
 
 def test_validate_terraform_reports_missing_cli(monkeypatch) -> None:
-    monkeypatch.setattr(tf_validator.shutil, "which", lambda _: None)
+    monkeypatch.setattr(tf_validator.shutil, "which", lambda _command, path=None: None)
 
     result = tf_validator.validate_terraform("terraform {}")
 
@@ -38,6 +48,7 @@ def test_validate_terraform_reports_missing_cli(monkeypatch) -> None:
     assert result.logs[0].return_code == 127
     assert result.logs[0].stdout == ""
     assert "Terraform CLI not found" in result.logs[0].stderr
+    assert result.security_scan.status == "not_run"
     assert "stdout:" in result.combined_log()
     assert "stderr:" in result.combined_log()
 
@@ -76,9 +87,16 @@ def test_validate_terraform_runs_commands_in_order_and_preserves_formatted_code(
         if command[1] == "validate":
             return SimpleNamespace(returncode=0, stdout="Success!", stderr="")
 
+        if command[0] == "/usr/bin/checkov":
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"results": {"failed_checks": []}}',
+                stderr="",
+            )
+
         raise AssertionError(f"Unexpected command: {command}")
 
-    monkeypatch.setattr(tf_validator.shutil, "which", lambda _: "/usr/bin/terraform")
+    monkeypatch.setattr(tf_validator.shutil, "which", fake_which)
     monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
 
     result = tf_validator.validate_terraform("terraform {}")
@@ -95,6 +113,15 @@ def test_validate_terraform_runs_commands_in_order_and_preserves_formatted_code(
             "-no-color",
         ],
         ["/usr/bin/terraform", "validate", "-no-color"],
+        [
+            "/usr/bin/checkov",
+            "-d",
+            ".",
+            "--framework",
+            "terraform",
+            "--output",
+            "json",
+        ],
     ]
 
     working_directories = [cwd for _, cwd in commands_run]
@@ -110,6 +137,12 @@ def test_validate_terraform_runs_commands_in_order_and_preserves_formatted_code(
     assert result.logs[0].stdout == "main.tf"
     assert result.logs[1].stdout == "Terraform has been successfully initialized!"
     assert result.logs[2].stdout == "Success!"
+    assert result.security_scan.status == "passed"
+    assert result.security_scan.findings == []
+    assert result.security_scan.log is not None
+    assert result.security_scan.log.command == (
+        "/usr/bin/checkov -d . --framework terraform --output json"
+    )
     assert {command[1] for command, _ in commands_run}.isdisjoint({"apply", "destroy"})
 
 
@@ -134,7 +167,7 @@ def test_validate_terraform_stops_after_timeout_and_returns_readable_log(
 
         raise AssertionError(f"Unexpected command after timeout: {command}")
 
-    monkeypatch.setattr(tf_validator.shutil, "which", lambda _: "/usr/bin/terraform")
+    monkeypatch.setattr(tf_validator.shutil, "which", fake_which)
     monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
 
     result = tf_validator.validate_terraform("terraform {}")
@@ -155,4 +188,135 @@ def test_validate_terraform_stops_after_timeout_and_returns_readable_log(
     assert result.logs[1].stdout == "partial init output"
     assert "Command timed out after 120 seconds." in result.logs[1].stderr
     assert "terraform init stalled" in result.logs[1].stderr
+    assert result.security_scan.status == "not_run"
     assert "/usr/bin/terraform validate -no-color" not in result.combined_log()
+
+
+def test_validate_terraform_captures_blocking_checkov_findings(monkeypatch) -> None:
+    def fake_run(command, cwd, capture_output, text, check, timeout):
+        if command[0] == "/usr/bin/checkov":
+            return SimpleNamespace(
+                returncode=1,
+                stdout=(
+                    '{"results": {"failed_checks": ['
+                    '{"check_id": "CKV_AWS_20", '
+                    '"check_name": "S3 Bucket has an ACL defined which allows '
+                    'public READ access.", '
+                    '"resource": "aws_s3_bucket.demo", '
+                    '"repo_file_path": "/main.tf", '
+                    '"file_line_range": [1, 3], '
+                    '"guideline": "https://docs.bridgecrew.io/docs/s3_2-acl-read-permissions-everyone"'
+                    "}]}}"
+                ),
+                stderr="",
+            )
+
+        if command[1] == "fmt":
+            return SimpleNamespace(returncode=0, stdout="main.tf", stderr="")
+
+        if command[1] == "init":
+            return SimpleNamespace(returncode=0, stdout="Initialized", stderr="")
+
+        if command[1] == "validate":
+            return SimpleNamespace(returncode=0, stdout="Success!", stderr="")
+
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(tf_validator.shutil, "which", fake_which)
+    monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
+
+    result = tf_validator.validate_terraform('resource "aws_s3_bucket" "demo" {}')
+
+    assert result.success is True
+    assert result.security_scan.status == "failed"
+    assert len(result.security_scan.findings) == 1
+    assert result.security_scan.findings[0].check_id == "CKV_AWS_20"
+    assert result.security_scan.findings[0].resource == "aws_s3_bucket.demo"
+    assert result.security_scan.findings[0].file_line_range == "1-3"
+    assert "blocking security finding" in result.security_scan.message
+
+
+def test_validate_terraform_reports_missing_checkov(monkeypatch) -> None:
+    def fake_run(command, cwd, capture_output, text, check, timeout):
+        if command[1] == "fmt":
+            return SimpleNamespace(returncode=0, stdout="main.tf", stderr="")
+
+        if command[1] == "init":
+            return SimpleNamespace(returncode=0, stdout="Initialized", stderr="")
+
+        if command[1] == "validate":
+            return SimpleNamespace(returncode=0, stdout="Success!", stderr="")
+
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(
+        tf_validator.shutil,
+        "which",
+        lambda command, path=None: "/usr/bin/terraform"
+        if command == "terraform"
+        else None,
+    )
+    monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
+
+    result = tf_validator.validate_terraform("terraform {}")
+
+    assert result.success is True
+    assert result.security_scan.status == "scanner_unavailable"
+    assert result.security_scan.findings == []
+    assert result.security_scan.log is not None
+    assert result.security_scan.log.command == "checkov"
+    assert "Checkov CLI not found" in result.security_scan.message
+
+
+def test_validate_terraform_finds_checkov_in_current_python_environment(
+    monkeypatch,
+) -> None:
+    commands_run: list[list[str]] = []
+
+    def fake_run(command, cwd, capture_output, text, check, timeout):
+        commands_run.append(list(command))
+
+        if command[1] == "fmt":
+            return SimpleNamespace(returncode=0, stdout="main.tf", stderr="")
+
+        if command[1] == "init":
+            return SimpleNamespace(returncode=0, stdout="Initialized", stderr="")
+
+        if command[1] == "validate":
+            return SimpleNamespace(returncode=0, stdout="Success!", stderr="")
+
+        if command[0] == "/workspace/.venv/bin/checkov":
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"results": {"failed_checks": []}}',
+                stderr="",
+            )
+
+        raise AssertionError(f"Unexpected command: {command}")
+
+    def fake_env_which(command: str, path: str | None = None) -> str | None:
+        if command == "terraform":
+            return "/usr/bin/terraform"
+
+        if command == "checkov" and path == "/workspace/.venv/bin":
+            return "/workspace/.venv/bin/checkov"
+
+        return None
+
+    monkeypatch.setattr(tf_validator.shutil, "which", fake_env_which)
+    monkeypatch.setattr(
+        tf_validator.sysconfig,
+        "get_path",
+        lambda key: "/workspace/.venv/bin",
+    )
+    monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
+
+    result = tf_validator.validate_terraform("terraform {}")
+
+    assert result.success is True
+    assert result.security_scan.status == "passed"
+    assert result.security_scan.log is not None
+    assert result.security_scan.log.command == (
+        "/workspace/.venv/bin/checkov -d . --framework terraform --output json"
+    )
+    assert commands_run[-1][0] == "/workspace/.venv/bin/checkov"

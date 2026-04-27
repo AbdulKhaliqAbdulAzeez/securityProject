@@ -2,8 +2,9 @@
 
 This repository is transitioning from a Python-only Streamlit MVP into a
 dual-stack project with a root Next.js frontend and a dedicated Python backend.
-The current sprint exposes the verified Terraform generation and validation
-modules through a Python API that the Next.js frontend can call directly.
+The current sprint exposes the verified Terraform generation, validation, and
+Checkov-backed security scanning modules through a Python API that the Next.js
+frontend can call directly.
 
 ## Current Product Surface
 
@@ -11,8 +12,10 @@ modules through a Python API that the Next.js frontend can call directly.
 	Google Gen AI SDK integration
 - the backend still validates generated HCL locally with `terraform fmt`,
 	`terraform init`, and `terraform validate`
+- the backend now runs `checkov -d <temporary-workspace>` after Terraform
+	validation succeeds and blocks readiness on security findings
 - the new root Next.js application now submits prompts through `app/api/workflow`
-	and renders live backend responses
+	and renders live backend responses, including specific Checkov warnings
 - the Streamlit workflow remains available as a backend-side fallback surface
 
 The system remains validation-only. It does not run `terraform apply`,
@@ -45,16 +48,7 @@ platform and confirm it is available on your shell path:
 terraform version
 ```
 
-### 2. Install Node.js Dependencies
-
-Use a current Node.js release that supports Next.js 16, then install the root
-frontend workspace dependencies:
-
-```bash
-npm install
-```
-
-### 3. Create A Python Environment
+### 2. Create A Python Environment
 
 ```bash
 python3 -m venv .venv
@@ -63,7 +57,28 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Configure Your Gemini API Key
+### 3. Install Checkov
+
+Install the Checkov CLI in the same shell environment you use for the backend:
+
+```bash
+pip install checkov
+checkov --version
+```
+
+If you install Checkov another way, make sure the `checkov` executable is still
+available on your shell path before you run the backend.
+
+### 4. Install Node.js Dependencies
+
+Use a current Node.js release that supports Next.js 16, then install the root
+frontend workspace dependencies:
+
+```bash
+npm install
+```
+
+### 5. Configure Your Gemini API Key
 
 Copy `.env.example` to `.env` and set either `GOOGLE_API_KEY` or
 `GEMINI_API_KEY`, or export one of those variables in your shell before
@@ -85,7 +100,7 @@ runtime alias automatically, so the configured intent stays stable even when
 the live model name is exposed as `gemini-3-flash-preview`.
 
 If no key is configured, the backend falls back to a safe starter Terraform
-file so the validation loop can still be demonstrated.
+file so the validation and security loop can still be demonstrated.
 
 ## Run The Project Locally
 
@@ -125,6 +140,7 @@ npm run build
 ruff format --check .
 ruff check .
 pytest
+checkov --version
 ```
 
 ## Orchestration Alignment
