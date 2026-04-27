@@ -15,7 +15,7 @@ import {
   type NoticeTone,
   type WorkflowViewModel,
 } from "@/lib/workflow";
-import { submitWorkflowDeployRequest, submitWorkflowRequest } from "@/lib/workflow-api";
+import { submitWorkflowDeployRequest, submitWorkflowRequest, submitFixRequest } from "@/lib/workflow-api";
 
 type WorkflowNotice = {
   message: string;
@@ -68,6 +68,41 @@ export function WorkflowShell() {
     }
   }
 
+  async function handleAutoFix() {
+    if (!prompt.trim() || !workflow.terraform.trim()) return;
+
+    const validationLog = workflow.feedbackSections.find(s => s.id === "validation")?.log || "";
+    const securityItems = workflow.feedbackSections.find(s => s.id === "security")?.items?.join("\n") || "";
+    const securityLog = workflow.feedbackSections.find(s => s.id === "security")?.log || "";
+    const combinedSecurityFindings = `${securityItems}\n${securityLog}`.trim();
+    const oldTerraform = workflow.terraform;
+
+    setDeployment(null);
+    setWorkflow(createRunningWorkflowViewModel(prompt));
+    setNotice({ message: "Submitting auto-fix request to the Python backend.", tone: "info" });
+
+    try {
+      const response = await submitFixRequest(
+        prompt, 
+        oldTerraform, 
+        validationLog, 
+        combinedSecurityFindings
+      );
+      setWorkflow(createWorkflowViewModelFromResponse(response));
+      setNotice({
+        message:
+          "Auto-fix response received. Review the updated Terraform, validation logs, and security findings below.",
+        tone: "info",
+      });
+      setActiveTab("code");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Auto-fix request failed unexpectedly.";
+
+      setWorkflow(createWorkflowFailureViewModel(prompt, message));
+      setNotice({ message, tone: "error" });
+    }
+  }
   async function handleDeployToGitHub() {
     if (!workflow.readiness.isReady) {
       setNotice({
@@ -245,10 +280,15 @@ export function WorkflowShell() {
             <p className="readiness-banner__copy">{workflow.readiness.deployHint}</p>
           </div>
 
-          <div className="readiness-actions">
+          <div className="readiness-actions" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
             <Button disabled={deployButtonDisabled} onClick={handleDeployToGitHub}>
               {isDeploying ? "Deploying..." : "Deploy to GitHub"}
             </Button>
+            {!workflow.readiness.isReady && workflow.terraform && workflow.terraform !== "Awaiting initial infrastructure prompt..." ? (
+              <Button disabled={workflow.isBusy} onClick={handleAutoFix} variant="secondary">
+                {workflow.isBusy ? "Fixing..." : "Auto-Fix Issues"}
+              </Button>
+            ) : null}
             <p className="readiness-note">
               {readinessNote}
             </p>

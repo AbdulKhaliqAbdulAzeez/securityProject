@@ -94,3 +94,47 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
   );
   await expect(page.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
 });
+test("auto-fix issues handles blocked states", async ({ page }) => {
+  await page.route("**/api/workflow", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        request: { prompt: "Create S3 bucket" },
+        generation: { status: "succeeded", used_fallback: false, message: "Generated" },
+        terraform: { generated_code: "resource aws_s3_bucket demo {}", formatted_code: "resource aws_s3_bucket demo {}" },
+        validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
+        security: { status: "failed", message: "Failed", findings: [], log: null },
+        readiness: { is_ready: false, status: "blocked_by_security", message: "Blocked", deploy_hint: "Cannot deploy" }
+      }),
+    });
+  });
+
+  await page.route("**/api/fix", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        request: { prompt: "Create S3 bucket" },
+        generation: { status: "succeeded", used_fallback: false, message: "Fixed" },
+        terraform: { generated_code: "resource aws_s3_bucket demo { # fixed }", formatted_code: "resource aws_s3_bucket demo { # fixed }" },
+        validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
+        security: { status: "passed", message: "Passed", findings: [], log: null },
+        readiness: { is_ready: true, status: "ready", message: "Ready", deploy_hint: "Can deploy" }
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Use sample prompt/i }).click();
+  await page.getByRole("button", { name: /Run workflow/i }).click();
+
+  await expect(page.getByText(/Blocked/i).first()).toBeVisible();
+  
+  const fixButton = page.getByRole("button", { name: /Auto-Fix Issues/i });
+  await expect(fixButton).toBeVisible();
+  await fixButton.click();
+
+  await expect(page.getByText(/Ready/i).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
+});

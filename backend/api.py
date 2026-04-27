@@ -5,13 +5,23 @@ from dataclasses import asdict
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from backend.ai_generator import generate_terraform_result
+from backend.ai_generator import (
+    generate_terraform_result,
+    generate_fixed_terraform_result,
+)
 from backend.gitops_manager import (
     GitOpsConfigurationError,
     GitOpsDeliveryError,
     deliver_terraform_via_gitops,
 )
 from backend.tf_validator import validate_terraform
+
+
+class FixRequest(BaseModel):
+    prompt: str
+    terraform_code: str
+    validation_errors: str
+    security_findings: str
 
 
 class WorkflowRequest(BaseModel):
@@ -98,8 +108,9 @@ class DeployResponse(BaseModel):
     delivery: GitOpsDeliveryPayload
 
 
-def build_workflow_response(prompt: str) -> WorkflowResponse:
-    generation_result = generate_terraform_result(prompt)
+def _build_response_from_generation_result(
+    prompt: str, generation_result
+) -> WorkflowResponse:
     validation_result = validate_terraform(generation_result.terraform)
     security_result = validation_result.security_scan
 
@@ -253,7 +264,29 @@ def submit_workflow(request: WorkflowRequest) -> WorkflowResponse:
         )
 
     try:
-        return build_workflow_response(prompt)
+        generation_result = generate_terraform_result(prompt)
+        return _build_response_from_generation_result(prompt, generation_result)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/fix", response_model=WorkflowResponse)
+def submit_fix(request: FixRequest) -> WorkflowResponse:
+    prompt = request.prompt.strip()
+    if not prompt:
+        raise HTTPException(
+            status_code=400,
+            detail="A natural-language infrastructure request is required.",
+        )
+
+    try:
+        generation_result = generate_fixed_terraform_result(
+            prompt,
+            request.terraform_code.strip(),
+            request.validation_errors.strip(),
+            request.security_findings.strip(),
+        )
+        return _build_response_from_generation_result(prompt, generation_result)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -284,9 +317,9 @@ def submit_deploy(request: DeployRequest) -> DeployResponse:
 __all__ = [
     "DeployRequest",
     "DeployResponse",
+    "FixRequest",
     "WorkflowRequest",
     "WorkflowResponse",
     "app",
     "build_deploy_response",
-    "build_workflow_response",
 ]

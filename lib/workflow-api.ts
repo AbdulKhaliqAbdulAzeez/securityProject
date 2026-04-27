@@ -135,3 +135,36 @@ export async function submitWorkflowDeployRequest(
 
   return (await response.json()) as WorkflowDeployResponse;
 }
+
+export async function submitFixRequest(
+  prompt: string,
+  terraformCode: string,
+  validationErrors: string,
+  securityFindings: string,
+): Promise<WorkflowApiResponse> {
+  const normalizedPrompt = prompt.trim();
+  const normalizedTerraformCode = terraformCode.trim();
+
+  if (!normalizedPrompt) {
+    throw new Error("A natural-language infrastructure request is required.");
+  }
+
+  const response = await fetch("/api/fix", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt: normalizedPrompt,
+      terraform_code: normalizedTerraformCode,
+      validation_errors: validationErrors,
+      security_findings: securityFindings,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkflowApiResponse;
+}
