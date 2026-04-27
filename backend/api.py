@@ -6,6 +6,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from backend.ai_generator import generate_terraform_result
+from backend.gitops_manager import (
+    GitOpsConfigurationError,
+    GitOpsDeliveryError,
+    deliver_terraform_via_gitops,
+)
 from backend.tf_validator import validate_terraform
 
 
@@ -15,6 +20,11 @@ class WorkflowRequest(BaseModel):
 
 class WorkflowRequestPayload(BaseModel):
     prompt: str
+
+
+class DeployRequest(BaseModel):
+    prompt: str
+    terraform_code: str
 
 
 class GenerationPayload(BaseModel):
@@ -65,6 +75,15 @@ class ReadinessPayload(BaseModel):
     deploy_hint: str
 
 
+class GitOpsDeliveryPayload(BaseModel):
+    status: str
+    message: str
+    branch_name: str
+    commit_sha: str
+    pull_request_url: str
+    pull_request_number: int
+
+
 class WorkflowResponse(BaseModel):
     request: WorkflowRequestPayload
     generation: GenerationPayload
@@ -72,6 +91,11 @@ class WorkflowResponse(BaseModel):
     validation: ValidationPayload
     security: SecurityPayload
     readiness: ReadinessPayload
+
+
+class DeployResponse(BaseModel):
+    request: WorkflowRequestPayload
+    delivery: GitOpsDeliveryPayload
 
 
 def build_workflow_response(prompt: str) -> WorkflowResponse:
@@ -162,9 +186,56 @@ def build_workflow_response(prompt: str) -> WorkflowResponse:
             status=readiness_status,
             message=readiness_message,
             deploy_hint=(
-                "Deploy to GitHub remains disabled until Sprint 4 adds GitOps "
-                "delivery, even when validation and security scanning pass."
+                "Deploy to GitHub stays gated until validation and Checkov pass, "
+                "and delivery always creates a pull request instead of mutating "
+                "the default branch."
             ),
+        ),
+    )
+
+
+def _ensure_gitops_readiness(terraform_code: str) -> str:
+    validation_result = validate_terraform(terraform_code)
+    if not validation_result.success:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "GitOps delivery is blocked because Terraform validation did not "
+                "pass. Re-run the workflow and resolve the validation errors first."
+            ),
+        )
+
+    if validation_result.security_scan.status != "passed":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "GitOps delivery is blocked because Checkov did not pass. Re-run "
+                "the workflow and resolve the security gate first."
+            ),
+        )
+
+    return validation_result.formatted_code
+
+
+def build_deploy_response(prompt: str, terraform_code: str) -> DeployResponse:
+    formatted_code = _ensure_gitops_readiness(terraform_code)
+
+    try:
+        delivery_result = deliver_terraform_via_gitops(formatted_code, prompt)
+    except GitOpsConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except GitOpsDeliveryError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    return DeployResponse(
+        request=WorkflowRequestPayload(prompt=prompt),
+        delivery=GitOpsDeliveryPayload(
+            status="succeeded",
+            message="GitOps delivery succeeded. Review the pull request on GitHub.",
+            branch_name=delivery_result.branch_name,
+            commit_sha=delivery_result.commit_sha,
+            pull_request_url=delivery_result.pull_request_url,
+            pull_request_number=delivery_result.pull_request_number,
         ),
     )
 
@@ -187,4 +258,35 @@ def submit_workflow(request: WorkflowRequest) -> WorkflowResponse:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-__all__ = ["WorkflowRequest", "WorkflowResponse", "app", "build_workflow_response"]
+@app.post("/deploy", response_model=DeployResponse)
+def submit_deploy(request: DeployRequest) -> DeployResponse:
+    prompt = request.prompt.strip()
+    terraform_code = request.terraform_code.strip()
+
+    if not prompt:
+        raise HTTPException(
+            status_code=400,
+            detail="A natural-language infrastructure request is required.",
+        )
+
+    if not terraform_code:
+        raise HTTPException(
+            status_code=400,
+            detail="Terraform code is required for GitOps delivery.",
+        )
+
+    try:
+        return build_deploy_response(prompt, terraform_code)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+__all__ = [
+    "DeployRequest",
+    "DeployResponse",
+    "WorkflowRequest",
+    "WorkflowResponse",
+    "app",
+    "build_deploy_response",
+    "build_workflow_response",
+]

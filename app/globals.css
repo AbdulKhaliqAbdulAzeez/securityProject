@@ -504,6 +504,44 @@ a {
   margin-top: 1rem;
 }
 
+.readiness-note,
+.deploy-result__copy {
+  color: var(--muted);
+}
+
+.deploy-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(31, 29, 26, 0.08);
+}
+
+.deploy-result--succeeded {
+  border-color: rgba(17, 94, 89, 0.2);
+}
+
+.deploy-result--failed {
+  border-color: rgba(154, 77, 10, 0.22);
+}
+
+.deploy-result--running {
+  border-color: rgba(15, 118, 110, 0.2);
+}
+
+.deploy-result__title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.deploy-result__copy {
+  margin: 0.45rem 0 0;
+}
+
+.deploy-result a {
+  color: var(--accent);
+}
+
 .site-footer {
   padding: 1rem 0 2.25rem;
   font-size: 0.95rem;

@@ -52,6 +52,20 @@ export type WorkflowApiResponse = {
   };
 };
 
+export type WorkflowDeployResponse = {
+  request: {
+    prompt: string;
+  };
+  delivery: {
+    status: "succeeded";
+    message: string;
+    branch_name: string;
+    commit_sha: string;
+    pull_request_url: string;
+    pull_request_number: number;
+  };
+};
+
 type ErrorPayload = {
   detail?: string;
   message?: string;
@@ -87,4 +101,37 @@ export async function submitWorkflowRequest(
   }
 
   return (await response.json()) as WorkflowApiResponse;
+}
+
+export async function submitWorkflowDeployRequest(
+  prompt: string,
+  terraformCode: string,
+): Promise<WorkflowDeployResponse> {
+  const normalizedPrompt = prompt.trim();
+  const normalizedTerraformCode = terraformCode.trim();
+
+  if (!normalizedPrompt) {
+    throw new Error("A natural-language infrastructure request is required.");
+  }
+
+  if (!normalizedTerraformCode) {
+    throw new Error("Terraform code is required for GitOps delivery.");
+  }
+
+  const response = await fetch("/api/deploy", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt: normalizedPrompt,
+      terraform_code: normalizedTerraformCode,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkflowDeployResponse;
 }

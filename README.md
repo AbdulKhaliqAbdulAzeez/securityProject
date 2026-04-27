@@ -3,8 +3,8 @@
 This repository is transitioning from a Python-only Streamlit MVP into a
 dual-stack project with a root Next.js frontend and a dedicated Python backend.
 The current sprint exposes the verified Terraform generation, validation, and
-Checkov-backed security scanning modules through a Python API that the Next.js
-frontend can call directly.
+Checkov-backed security scanning modules plus GitOps pull-request delivery
+through a Python API that the Next.js frontend can call directly.
 
 ## Current Product Surface
 
@@ -14,12 +14,15 @@ frontend can call directly.
 	`terraform init`, and `terraform validate`
 - the backend now runs `checkov -d <temporary-workspace>` after Terraform
 	validation succeeds and blocks readiness on security findings
+- the backend now creates a unique GitHub branch, commits `main.tf`, and opens
+	a pull request after validation and Checkov both pass
 - the new root Next.js application now submits prompts through `app/api/workflow`
-	and renders live backend responses, including specific Checkov warnings
+	and renders live backend responses, specific Checkov warnings, and GitOps PR links
 - the Streamlit workflow remains available as a backend-side fallback surface
 
-The system remains validation-only. It does not run `terraform apply`,
-`terraform destroy`, or any equivalent deploy step.
+The system remains validation-only for infrastructure execution. It does not
+run `terraform apply`, `terraform destroy`, or any equivalent infrastructure
+deploy step. The GitOps path only creates a review branch and pull request.
 
 ## Repository Map
 
@@ -102,6 +105,20 @@ the live model name is exposed as `gemini-3-flash-preview`.
 If no key is configured, the backend falls back to a safe starter Terraform
 file so the validation and security loop can still be demonstrated.
 
+### 6. Configure GitHub Delivery Settings
+
+Set the GitHub values the backend needs before using `Deploy to GitHub`:
+
+```bash
+GITHUB_TOKEN="your-token-here"
+GITHUB_REPOSITORY="owner/repository"
+GITHUB_BASE_BRANCH="main"
+```
+
+Use a token with repository contents and pull-request permissions scoped to a
+test repository where possible. The token must stay server-side and should
+never be exposed in client code or browser logs.
+
 ## Run The Project Locally
 
 Run the Python workflow API in one terminal:
@@ -141,6 +158,13 @@ ruff format --check .
 ruff check .
 pytest
 checkov --version
+```
+
+Manual smoke testing for GitOps delivery still requires a configured GitHub
+token, repository target, and running backend/frontend pair:
+
+```bash
+npm run dev
 ```
 
 ## Orchestration Alignment

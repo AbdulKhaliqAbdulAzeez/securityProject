@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("workflow shell renders prompt, live workflow feedback, and disabled deploy state", async ({
+test("workflow shell renders prompt, workflow feedback, and ready deploy state", async ({
   page,
 }) => {
   await page.route("**/api/workflow", async (route) => {
@@ -36,17 +36,23 @@ test("workflow shell renders prompt, live workflow feedback, and disabled deploy
             "$ terraform validate -no-color\n\nexit code: 0\n\nstdout:\nSuccess!\n\nstderr:\n",
         },
         security: {
-          status: "queued",
-          message:
-            "Security scanning is not wired yet. Sprint 3 will add Checkov and block readiness on findings.",
+          status: "passed",
+          message: "Checkov security scan passed with no blocking findings.",
+          findings: [],
+          log: {
+            command: "checkov -d . --framework terraform --output json",
+            return_code: 0,
+            stdout: '{"results": {"failed_checks": []}}',
+            stderr: "",
+          },
         },
         readiness: {
-          is_ready: false,
-          status: "pending_security",
+          is_ready: true,
+          status: "ready",
           message:
-            "Terraform validation passed, but deployment remains blocked until Sprint 3 adds security scanning.",
+            "Terraform validation and Checkov security scanning passed. This document is ready for the later GitOps handoff.",
           deploy_hint:
-            "Deploy to GitHub remains disabled until Sprint 3 adds security scanning and Sprint 4 adds GitOps delivery.",
+            "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
         },
       }),
     });
@@ -56,7 +62,7 @@ test("workflow shell renders prompt, live workflow feedback, and disabled deploy
 
   await expect(
     page.getByRole("heading", {
-      name: /Stage generation, validation, and security review from one page\./i,
+      name: /Stage generation, validation, security review, and GitOps delivery from one page\./i,
     }),
   ).toBeVisible();
   await expect(page.getByLabel("Infrastructure request")).toBeVisible();
@@ -67,7 +73,7 @@ test("workflow shell renders prompt, live workflow feedback, and disabled deploy
   await page.getByRole("button", { name: /Use sample prompt/i }).click();
   await page.getByRole("button", { name: /Run workflow/i }).click();
 
-  await expect(page.getByText(/Pending security review/i)).toBeVisible();
+  await expect(page.getByText(/Ready for GitOps handoff/i)).toBeVisible();
   await expect(
     page.getByLabel("Backend feedback panels").getByText(/Terraform validation passed\./i),
   ).toBeVisible();
@@ -79,4 +85,5 @@ test("workflow shell renders prompt, live workflow feedback, and disabled deploy
   await expect(page.getByLabel("Generated Terraform output")).toContainText(
     'resource "aws_s3_bucket" "demo" {}',
   );
+  await expect(page.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
 });

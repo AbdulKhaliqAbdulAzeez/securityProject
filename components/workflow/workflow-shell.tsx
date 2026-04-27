@@ -14,17 +14,25 @@ import {
   type NoticeTone,
   type WorkflowViewModel,
 } from "@/lib/workflow";
-import { submitWorkflowRequest } from "@/lib/workflow-api";
+import { submitWorkflowDeployRequest, submitWorkflowRequest } from "@/lib/workflow-api";
 
 type WorkflowNotice = {
   message: string;
   tone: NoticeTone;
 };
 
+type DeploymentState = {
+  status: "running" | "succeeded" | "failed";
+  message: string;
+  branchName?: string;
+  pullRequestUrl?: string;
+};
+
 export function WorkflowShell() {
   const [prompt, setPrompt] = useState("");
   const [workflow, setWorkflow] = useState<WorkflowViewModel>(idleWorkflowViewModel);
   const [notice, setNotice] = useState<WorkflowNotice | null>(null);
+  const [deployment, setDeployment] = useState<DeploymentState | null>(null);
 
   async function handleRunWorkflow() {
     if (!prompt.trim()) {
@@ -37,6 +45,7 @@ export function WorkflowShell() {
       return;
     }
 
+    setDeployment(null);
     setWorkflow(createRunningWorkflowViewModel(prompt));
     setNotice({ message: "Submitting the prompt to the Python backend.", tone: "info" });
 
@@ -57,6 +66,50 @@ export function WorkflowShell() {
     }
   }
 
+  async function handleDeployToGitHub() {
+    if (!workflow.readiness.isReady) {
+      setNotice({
+        message:
+          "Deploy to GitHub stays disabled until Terraform validation and Checkov both pass.",
+        tone: "error",
+      });
+      return;
+    }
+
+    setDeployment({
+      status: "running",
+      message:
+        "Creating a GitHub branch, committing main.tf, and opening a pull request.",
+    });
+    setNotice({
+      message: "Submitting the validated Terraform to the GitOps delivery endpoint.",
+      tone: "info",
+    });
+
+    try {
+      const response = await submitWorkflowDeployRequest(
+        workflow.sourcePrompt,
+        workflow.terraform,
+      );
+      setDeployment({
+        status: "succeeded",
+        message: response.delivery.message,
+        branchName: response.delivery.branch_name,
+        pullRequestUrl: response.delivery.pull_request_url,
+      });
+      setNotice({
+        message: "GitOps delivery succeeded. Review the pull request link below.",
+        tone: "info",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "GitOps delivery failed unexpectedly.";
+
+      setDeployment({ status: "failed", message });
+      setNotice({ message, tone: "error" });
+    }
+  }
+
   function handleLoadSamplePrompt() {
     setPrompt(defaultInfrastructurePrompt);
     setNotice({
@@ -69,25 +122,32 @@ export function WorkflowShell() {
   function handleResetShell() {
     setPrompt("");
     setWorkflow(idleWorkflowViewModel);
+    setDeployment(null);
     setNotice(null);
   }
+
+  const isDeploying = deployment?.status === "running";
+  const deployButtonDisabled = workflow.isBusy || isDeploying || !workflow.readiness.isReady;
+  const readinessNote = workflow.readiness.isReady
+    ? "GitOps delivery creates a unique branch, commits main.tf, and opens a pull request without mutating the default branch."
+    : workflow.readiness.deployHint;
 
   return (
     <main className="workflow-page">
       <section className="hero-panel">
-        <p className="hero-eyebrow">Sprint 3 Checkov Gate</p>
+        <p className="hero-eyebrow">Sprint 4 GitOps Delivery</p>
         <h1 className="hero-title">
-          Stage generation, validation, and security review from one page.
+          Stage generation, validation, security review, and GitOps delivery from one page.
         </h1>
         <p className="hero-copy">
           This shell now calls the Python backend through a stable workflow API.
           Prompt entry, formatted Terraform output, Terraform logs, Checkov
-          findings, and deploy readiness remain visible in one deliberate
+          findings, deploy readiness, and pull-request delivery remain visible in one deliberate
           frontend surface while the no-deploy safety boundary stays intact.
         </p>
         <div className="hero-actions">
-          <span className="hero-primary">Live Python generation, validation, and Checkov scanning</span>
-          <span className="hero-secondary">Deploy stays disabled until GitOps lands</span>
+          <span className="hero-primary">Live Python generation, validation, Checkov scanning, and PR delivery</span>
+          <span className="hero-secondary">Deploy stays gated until the workflow is ready</span>
         </div>
       </section>
 
@@ -119,7 +179,7 @@ export function WorkflowShell() {
 
           <p className="composer-caption">
             Keep the Python backend service running locally when testing the live
-            generation, validation, and Checkov path end to end.
+            generation, validation, Checkov, and GitOps path end to end.
           </p>
 
           <div className="composer-actions">
@@ -196,12 +256,31 @@ export function WorkflowShell() {
         </div>
 
         <div className="readiness-actions">
-          <Button disabled>Deploy to GitHub</Button>
+          <Button disabled={deployButtonDisabled} onClick={handleDeployToGitHub}>
+            {isDeploying ? "Deploying..." : "Deploy to GitHub"}
+          </Button>
           <p className="readiness-note">
-            The control is intentionally disabled until Sprint 4 wires branch creation,
-            commit delivery, and pull-request creation.
+            {readinessNote}
           </p>
         </div>
+
+        {deployment ? (
+          <div className={`deploy-result deploy-result--${deployment.status}`}>
+            <span className="readiness-banner__eyebrow">GitOps delivery</span>
+            <p className="deploy-result__title">{deployment.message}</p>
+            {deployment.branchName ? (
+              <p className="deploy-result__copy">Branch: {deployment.branchName}</p>
+            ) : null}
+            {deployment.pullRequestUrl ? (
+              <p className="deploy-result__copy">
+                Pull request:{" "}
+                <a href={deployment.pullRequestUrl} rel="noreferrer" target="_blank">
+                  {deployment.pullRequestUrl}
+                </a>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </Panel>
     </main>
   );

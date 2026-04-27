@@ -28,6 +28,7 @@ export type FeedbackSection = {
 };
 
 export type WorkflowReadiness = {
+  isReady: boolean;
   label: string;
   title: string;
   summary: string;
@@ -37,6 +38,7 @@ export type WorkflowReadiness = {
 };
 
 export type WorkflowViewModel = {
+  sourcePrompt: string;
   terraform: string;
   steps: WorkflowStep[];
   feedbackSections: FeedbackSection[];
@@ -45,6 +47,7 @@ export type WorkflowViewModel = {
 };
 
 export const idleWorkflowViewModel: WorkflowViewModel = {
+  sourcePrompt: "",
   terraform:
     "# Generated Terraform output will appear here after the Python workflow API returns a response.",
   steps: [
@@ -97,13 +100,14 @@ export const idleWorkflowViewModel: WorkflowViewModel = {
     },
   ],
   readiness: {
+    isReady: false,
     label: "Not ready",
     title: "Deploy remains intentionally disabled",
     summary: "The shell is waiting on a staged workflow preview.",
     detail:
       "Readiness is shown in the UI early so later backend, security, and GitOps work can plug into an already explicit state model.",
     deployHint:
-      "Deploy to GitHub stays disabled until Sprint 4 adds branch creation, commit delivery, and pull-request generation.",
+      "Deploy to GitHub stays disabled until Terraform validation and Checkov both pass.",
     tone: "idle",
   },
   isBusy: false,
@@ -215,6 +219,7 @@ function createReadinessState(
 ): WorkflowReadiness {
   if (response.readiness.is_ready) {
     return {
+      isReady: true,
       label: "Ready",
       title: "Ready for GitOps handoff",
       summary: response.readiness.message,
@@ -226,6 +231,7 @@ function createReadinessState(
 
   if (response.validation.status === "failed") {
     return {
+      isReady: false,
       label: "Blocked by validation",
       title: "Not ready to deploy",
       summary: response.readiness.message,
@@ -238,6 +244,7 @@ function createReadinessState(
 
   if (response.security.status === "failed") {
     return {
+      isReady: false,
       label: "Blocked by security",
       title: "Not ready to deploy",
       summary: response.readiness.message,
@@ -250,6 +257,7 @@ function createReadinessState(
 
   if (response.security.status === "scanner_unavailable") {
     return {
+      isReady: false,
       label: "Blocked by scanner setup",
       title: "Not ready to deploy",
       summary: response.readiness.message,
@@ -261,6 +269,7 @@ function createReadinessState(
 
   if (response.security.status === "scan_error") {
     return {
+      isReady: false,
       label: "Blocked by scan failure",
       title: "Not ready to deploy",
       summary: response.readiness.message,
@@ -271,6 +280,7 @@ function createReadinessState(
   }
 
   return {
+    isReady: false,
     label: "Pending security review",
     title: "Validation passed, security still pending",
     summary: response.readiness.message,
@@ -282,6 +292,7 @@ function createReadinessState(
 
 export function createRunningWorkflowViewModel(prompt: string): WorkflowViewModel {
   return {
+    sourcePrompt: prompt.trim() || defaultInfrastructurePrompt,
     terraform: `# Waiting for backend response\n# Request: ${prompt.trim() || defaultInfrastructurePrompt}`,
     steps: [
       {
@@ -331,13 +342,14 @@ export function createRunningWorkflowViewModel(prompt: string): WorkflowViewMode
       },
     ],
     readiness: {
+      isReady: false,
       label: "Working",
       title: "Workflow running",
       summary: "Waiting for the backend to return generation and validation results.",
       detail:
         "Deploy readiness remains disabled while the Python workflow request is still running.",
       deployHint:
-        "Deploy stays disabled until Sprint 3 adds security scanning and Sprint 4 adds GitOps delivery.",
+        "Deploy stays disabled until the workflow is ready for GitOps delivery.",
       tone: "idle",
     },
     isBusy: true,
@@ -354,6 +366,7 @@ export function createWorkflowViewModelFromResponse(
   const securityStep = createSecurityStep(response.security);
 
   return {
+    sourcePrompt: response.request.prompt,
     terraform:
       response.terraform.formatted_code || response.terraform.generated_code || idleWorkflowViewModel.terraform,
     steps: [
@@ -407,6 +420,7 @@ export function createWorkflowFailureViewModel(
   const normalizedPrompt = prompt.trim();
 
   return {
+    sourcePrompt: normalizedPrompt,
     terraform: normalizedPrompt
       ? `# Terraform output unavailable because the backend request failed.\n# Request: ${normalizedPrompt}`
       : idleWorkflowViewModel.terraform,
@@ -456,12 +470,13 @@ export function createWorkflowFailureViewModel(
       },
     ],
     readiness: {
+      isReady: false,
       label: "Blocked by backend error",
       title: "Not ready to deploy",
       summary: message,
       detail: "Fix the backend request failure before generation and validation can resume.",
       deployHint:
-        "Deploy to GitHub remains disabled until the backend is reachable, security scanning is wired, and GitOps delivery exists.",
+        "Deploy to GitHub remains disabled until the backend is reachable and the workflow is ready.",
       tone: "warning",
     },
     isBusy: false,

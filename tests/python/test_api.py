@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 
 from backend import api
 from backend.ai_generator import GenerationResult
+from backend.gitops_manager import (
+    GitOpsConfigurationError,
+    GitOpsDeliveryError,
+    GitOpsDeliveryResult,
+)
 from backend.tf_validator import (
     CommandLog,
     SecurityFinding,
@@ -266,3 +271,179 @@ def test_submit_workflow_blocks_readiness_when_checkov_is_missing(monkeypatch) -
     assert body["security"]["log"]["command"] == "checkov"
     assert body["readiness"]["is_ready"] is False
     assert body["readiness"]["status"] == "blocked_by_security_setup"
+
+
+def test_submit_deploy_returns_pull_request_metadata(monkeypatch) -> None:
+    captured_delivery: dict[str, str] = {}
+
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code='resource "aws_s3_bucket" "demo" {}\n# formatted',
+            logs=[],
+            security_scan=create_security_scan_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "deliver_terraform_via_gitops",
+        lambda terraform_code, prompt: captured_delivery.update(
+            {"terraform_code": terraform_code, "prompt": prompt}
+        )
+        or GitOpsDeliveryResult(
+            branch_name="gitops/terraform-create-an-aws-s3-bucket-abc12345",
+            commit_sha="commit-sha",
+            pull_request_url="https://github.example/pr/123",
+            pull_request_number=123,
+        ),
+    )
+
+    response = client.post(
+        "/deploy",
+        json={
+            "prompt": "Create an AWS S3 bucket",
+            "terraform_code": 'resource "aws_s3_bucket" "demo" {}',
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert captured_delivery == {
+        "terraform_code": 'resource "aws_s3_bucket" "demo" {}\n# formatted',
+        "prompt": "Create an AWS S3 bucket",
+    }
+    assert body == {
+        "request": {"prompt": "Create an AWS S3 bucket"},
+        "delivery": {
+            "status": "succeeded",
+            "message": "GitOps delivery succeeded. Review the pull request on GitHub.",
+            "branch_name": "gitops/terraform-create-an-aws-s3-bucket-abc12345",
+            "commit_sha": "commit-sha",
+            "pull_request_url": "https://github.example/pr/123",
+            "pull_request_number": 123,
+        },
+    }
+
+
+def test_submit_deploy_rejects_validation_failure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=False,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(status="not_run"),
+        ),
+    )
+
+    response = client.post(
+        "/deploy",
+        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": (
+            "GitOps delivery is blocked because Terraform validation did not pass. "
+            "Re-run the workflow and resolve the validation errors first."
+        )
+    }
+
+
+def test_submit_deploy_rejects_checkov_failure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(status="failed"),
+        ),
+    )
+
+    response = client.post(
+        "/deploy",
+        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": (
+            "GitOps delivery is blocked because Checkov did not pass. Re-run the "
+            "workflow and resolve the security gate first."
+        )
+    }
+
+
+def test_submit_deploy_surfaces_github_configuration_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "deliver_terraform_via_gitops",
+        lambda terraform_code, prompt: (_ for _ in ()).throw(
+            GitOpsConfigurationError(
+                "GITHUB_TOKEN is not configured. Set it before running GitOps delivery."
+            )
+        ),
+    )
+
+    response = client.post(
+        "/deploy",
+        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": (
+            "GITHUB_TOKEN is not configured. Set it before running GitOps delivery."
+        )
+    }
+
+
+def test_submit_deploy_surfaces_github_delivery_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(),
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "deliver_terraform_via_gitops",
+        lambda terraform_code, prompt: (_ for _ in ()).throw(
+            GitOpsDeliveryError(
+                "GitHub delivery failed. Check repository access, branch settings, "
+                "and pull-request permissions."
+            )
+        ),
+    )
+
+    response = client.post(
+        "/deploy",
+        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": (
+            "GitHub delivery failed. Check repository access, branch settings, and "
+            "pull-request permissions."
+        )
+    }

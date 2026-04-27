@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import Home from "@/app/page";
-import type { WorkflowApiResponse } from "@/lib/workflow-api";
+import type { WorkflowApiResponse, WorkflowDeployResponse } from "@/lib/workflow-api";
 
 type MockFetchResponse = {
   ok: boolean;
@@ -70,7 +70,26 @@ function createSuccessfulWorkflowResponse(
       message:
         "Terraform validation and Checkov security scanning passed. This document is ready for the later GitOps handoff.",
       deploy_hint:
-        "Deploy to GitHub remains disabled until Sprint 4 adds GitOps delivery, even when validation and security scanning pass.",
+        "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
+    },
+    ...overrides,
+  };
+}
+
+function createSuccessfulDeployResponse(
+  overrides: Partial<WorkflowDeployResponse> = {},
+): WorkflowDeployResponse {
+  return {
+    request: {
+      prompt: "Create an AWS S3 bucket with public access blocked.",
+    },
+    delivery: {
+      status: "succeeded",
+      message: "GitOps delivery succeeded. Review the pull request on GitHub.",
+      branch_name: "gitops/terraform-create-an-aws-s3-bucket-abc12345",
+      commit_sha: "commit-sha",
+      pull_request_url: "https://github.example/pr/123",
+      pull_request_number: 123,
     },
     ...overrides,
   };
@@ -91,7 +110,7 @@ describe("Home page", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /Stage generation, validation, and security review from one page\./i,
+        name: /Stage generation, validation, security review, and GitOps delivery from one page\./i,
       }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/Infrastructure request/i)).toBeInTheDocument();
@@ -142,7 +161,7 @@ describe("Home page", () => {
         .length,
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Success!/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
   });
 
   it("maps backend validation failures into readable UI states", async () => {
@@ -182,7 +201,7 @@ describe("Home page", () => {
             message:
               "Terraform validation failed, so deployment remains blocked until the validation errors are resolved.",
             deploy_hint:
-              "Deploy to GitHub remains disabled until Sprint 4 adds GitOps delivery, even when validation and security scanning pass.",
+              "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
           },
         }),
       ),
@@ -240,7 +259,7 @@ describe("Home page", () => {
             message:
               "Checkov reported blocking security findings, so deployment remains blocked until the issues are resolved.",
             deploy_hint:
-              "Deploy to GitHub remains disabled until Sprint 4 adds GitOps delivery, even when validation and security scanning pass.",
+              "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
           },
         }),
       ),
@@ -280,7 +299,7 @@ describe("Home page", () => {
             message:
               "Terraform validation passed, but security scanning is blocked until Checkov is installed locally.",
             deploy_hint:
-              "Deploy to GitHub remains disabled until Sprint 4 adds GitOps delivery, even when validation and security scanning pass.",
+              "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
           },
         }),
       ),
@@ -294,6 +313,71 @@ describe("Home page", () => {
     expect(await screen.findByText(/Blocked by scanner setup/i)).toBeInTheDocument();
     expect(screen.getByText(/Checkov setup required/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Checkov CLI not found on PATH/i).length).toBeGreaterThan(0);
+  });
+
+  it("submits GitOps delivery and shows the pull-request URL", async () => {
+    fetchMock
+      .mockResolvedValueOnce(createFetchResponse(createSuccessfulWorkflowResponse()))
+      .mockResolvedValueOnce(createFetchResponse(createSuccessfulDeployResponse()));
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Use sample prompt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
+
+    expect(await screen.findByText(/^Ready$/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Deploy to GitHub/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "/api/deploy",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            prompt: "Create an AWS S3 bucket with public access blocked.",
+            terraform_code: 'resource "aws_s3_bucket" "demo" {}',
+          }),
+        }),
+      );
+    });
+
+    expect(screen.getAllByText(/GitOps delivery succeeded/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("link", { name: /https:\/\/github\.example\/pr\/123/i }),
+    ).toHaveAttribute("href", "https://github.example/pr/123");
+    expect(
+      screen.getByText(/Branch: gitops\/terraform-create-an-aws-s3-bucket-abc12345/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a readable GitOps delivery error", async () => {
+    fetchMock
+      .mockResolvedValueOnce(createFetchResponse(createSuccessfulWorkflowResponse()))
+      .mockResolvedValueOnce(
+        createFetchResponse(
+          {
+            message:
+              "GITHUB_TOKEN is not configured. Set it before running GitOps delivery.",
+          },
+          { ok: false, status: 503 },
+        ),
+      );
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Use sample prompt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Run workflow/i }));
+
+    expect(await screen.findByText(/^Ready$/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Deploy to GitHub/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /GITHUB_TOKEN is not configured/i,
+    );
+    expect(screen.getAllByText(/GITHUB_TOKEN is not configured/i).length).toBeGreaterThan(0);
   });
 
   it("shows a readable backend transport error", async () => {
