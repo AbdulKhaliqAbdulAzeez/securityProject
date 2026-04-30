@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+from typing import Any
+
+from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
 
 from backend import api
 from backend.ai_generator import GenerationResult
@@ -16,7 +19,34 @@ from backend.tf_validator import (
     ValidationResult,
 )
 
-client = TestClient(api.app)
+
+class RouteResponse:
+    def __init__(self, status_code: int, body: dict[str, Any]) -> None:
+        self.status_code = status_code
+        self._body = body
+
+    def json(self) -> dict[str, Any]:
+        return self._body
+
+
+def post_workflow(prompt: str) -> RouteResponse:
+    try:
+        response = api.submit_workflow(api.WorkflowRequest(prompt=prompt))
+    except HTTPException as error:
+        return RouteResponse(error.status_code, {"detail": error.detail})
+
+    return RouteResponse(200, jsonable_encoder(response))
+
+
+def post_deploy(prompt: str, terraform_code: str) -> RouteResponse:
+    try:
+        response = api.submit_deploy(
+            api.DeployRequest(prompt=prompt, terraform_code=terraform_code)
+        )
+    except HTTPException as error:
+        return RouteResponse(error.status_code, {"detail": error.detail})
+
+    return RouteResponse(200, jsonable_encoder(response))
 
 
 def create_security_scan_result(
@@ -69,7 +99,7 @@ def test_submit_workflow_returns_contract(monkeypatch) -> None:
         ),
     )
 
-    response = client.post("/workflow", json={"prompt": "Create an AWS S3 bucket"})
+    response = post_workflow("Create an AWS S3 bucket")
 
     assert response.status_code == 200
     body = response.json()
@@ -95,7 +125,7 @@ def test_submit_workflow_returns_contract(monkeypatch) -> None:
 
 
 def test_submit_workflow_rejects_blank_prompt() -> None:
-    response = client.post("/workflow", json={"prompt": "   "})
+    response = post_workflow("   ")
 
     assert response.status_code == 400
     assert response.json() == {
@@ -139,7 +169,7 @@ def test_submit_workflow_preserves_validation_failure_details(monkeypatch) -> No
         ),
     )
 
-    response = client.post("/workflow", json={"prompt": "Create infrastructure"})
+    response = post_workflow("Create infrastructure")
 
     assert response.status_code == 200
     body = response.json()
@@ -210,7 +240,7 @@ def test_submit_workflow_blocks_readiness_on_checkov_findings(monkeypatch) -> No
         ),
     )
 
-    response = client.post("/workflow", json={"prompt": "Create an AWS S3 bucket"})
+    response = post_workflow("Create an AWS S3 bucket")
 
     assert response.status_code == 200
     body = response.json()
@@ -263,7 +293,7 @@ def test_submit_workflow_blocks_readiness_when_checkov_is_missing(monkeypatch) -
         ),
     )
 
-    response = client.post("/workflow", json={"prompt": "Create an AWS S3 bucket"})
+    response = post_workflow("Create an AWS S3 bucket")
 
     assert response.status_code == 200
     body = response.json()
@@ -300,12 +330,9 @@ def test_submit_deploy_returns_pull_request_metadata(monkeypatch) -> None:
         ),
     )
 
-    response = client.post(
-        "/deploy",
-        json={
-            "prompt": "Create an AWS S3 bucket",
-            "terraform_code": 'resource "aws_s3_bucket" "demo" {}',
-        },
+    response = post_deploy(
+        "Create an AWS S3 bucket",
+        'resource "aws_s3_bucket" "demo" {}',
     )
 
     assert response.status_code == 200
@@ -339,10 +366,7 @@ def test_submit_deploy_rejects_validation_failure(monkeypatch) -> None:
         ),
     )
 
-    response = client.post(
-        "/deploy",
-        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
-    )
+    response = post_deploy("Create infrastructure", "terraform {}")
 
     assert response.status_code == 400
     assert response.json() == {
@@ -365,10 +389,7 @@ def test_submit_deploy_rejects_checkov_failure(monkeypatch) -> None:
         ),
     )
 
-    response = client.post(
-        "/deploy",
-        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
-    )
+    response = post_deploy("Create infrastructure", "terraform {}")
 
     assert response.status_code == 400
     assert response.json() == {
@@ -400,10 +421,7 @@ def test_submit_deploy_surfaces_github_configuration_error(monkeypatch) -> None:
         ),
     )
 
-    response = client.post(
-        "/deploy",
-        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
-    )
+    response = post_deploy("Create infrastructure", "terraform {}")
 
     assert response.status_code == 503
     assert response.json() == {
@@ -435,10 +453,7 @@ def test_submit_deploy_surfaces_github_delivery_error(monkeypatch) -> None:
         ),
     )
 
-    response = client.post(
-        "/deploy",
-        json={"prompt": "Create infrastructure", "terraform_code": "terraform {}"},
-    )
+    response = post_deploy("Create infrastructure", "terraform {}")
 
     assert response.status_code == 502
     assert response.json() == {

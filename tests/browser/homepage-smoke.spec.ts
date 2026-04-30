@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("workflow shell renders prompt, workflow feedback, and ready deploy state", async ({
+test("chat command center renders workflow cards and deploys ready code", async ({
   page,
 }) => {
   await page.route("**/api/workflow", async (route) => {
@@ -9,13 +9,12 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
       contentType: "application/json",
       body: JSON.stringify({
         request: {
-          prompt:
-            "Create a highly available AWS EC2 web server with an application load balancer and a security group that allows HTTP traffic.",
+          prompt: "Create an S3 bucket",
         },
         generation: {
           status: "succeeded",
           used_fallback: false,
-          message: "Terraform generated successfully from the Gemini-backed model.",
+          message: "Terraform generated successfully.",
         },
         terraform: {
           generated_code: 'resource "aws_s3_bucket" "demo" {}',
@@ -24,35 +23,40 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
         validation: {
           status: "passed",
           message: "Terraform validation passed.",
-          logs: [
-            {
-              command: "terraform validate -no-color",
-              return_code: 0,
-              stdout: "Success!",
-              stderr: "",
-            },
-          ],
-          combined_log:
-            "$ terraform validate -no-color\n\nexit code: 0\n\nstdout:\nSuccess!\n\nstderr:\n",
+          logs: [],
+          combined_log: "Success!",
         },
         security: {
           status: "passed",
-          message: "Checkov security scan passed with no blocking findings.",
+          message: "Checkov security scan passed.",
           findings: [],
-          log: {
-            command: "checkov -d . --framework terraform --output json",
-            return_code: 0,
-            stdout: '{"results": {"failed_checks": []}}',
-            stderr: "",
-          },
+          log: null,
         },
         readiness: {
           is_ready: true,
           status: "ready",
-          message:
-            "Terraform validation and Checkov security scanning passed. This document is ready for the later GitOps handoff.",
-          deploy_hint:
-            "Deploy to GitHub stays gated until validation and Checkov pass, and delivery always creates a pull request instead of mutating the default branch.",
+          message: "Configuration verified.",
+          deploy_hint: "Ready for handoff.",
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/deploy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        request: {
+          prompt: "Create an S3 bucket",
+        },
+        delivery: {
+          status: "succeeded",
+          message: "Pull request opened.",
+          branch_name: "terraform/chat-demo",
+          commit_sha: "abcdef123456",
+          pull_request_url: "https://github.com/example/repo/pull/7",
+          pull_request_number: 7,
         },
       }),
     });
@@ -61,40 +65,29 @@ test("workflow shell renders prompt, workflow feedback, and ready deploy state",
   await page.goto("/");
 
   await expect(page.getByText(/AI-Powered Terraform Architect/i).first()).toBeVisible();
-  await expect(
-    page.getByRole("heading", {
-      name: /Command Center/i,
-    }),
-  ).toBeVisible();
-  await expect(page.getByText(/Checkov live/i)).toBeVisible();
-  await expect(page.getByText(/GitOps live/i)).toBeVisible();
-  await expect(page.getByPlaceholder(/Describe the infrastructure you want/i)).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Deploy to GitHub/i }),
-  ).toBeDisabled();
+  await expect(page.getByText(/Hello! Describe the AWS infrastructure/i)).toBeVisible();
 
-  await page.getByRole("button", { name: /Use sample prompt/i }).click();
-  await page.getByRole("button", { name: /Run workflow/i }).click();
+  const textarea = page.getByPlaceholder(/Describe the infrastructure you need/i);
+  await textarea.fill("Create an S3 bucket");
+  await textarea.press("Enter");
 
-  await expect(page.getByText(/Ready for GitOps handoff/i)).toBeVisible();
+  await expect(page.getByText(/Terraform generated successfully/i)).toBeVisible();
+  await expect(page.locator('.chat-card-title').getByText(/Generated Terraform/i)).toBeVisible();
+  await expect(page.locator('.chat-card-title').getByText(/Terraform Validation/i)).toBeVisible();
+  await expect(page.locator('.chat-card-title').getByText(/Security Scan/i)).toBeVisible();
+  await expect(page.locator('.chat-card-title').getByText(/Handoff Readiness/i)).toBeVisible();
 
-  await page.getByRole("tab", { name: /Validation Logs/i }).click();
-  await expect(
-    page.getByLabel("Validation feedback").getByText(/Terraform validation passed\./i),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByLabel("Validation feedback")
-      .getByText(/Terraform generated successfully from the Gemini-backed model\./i),
-  ).toBeVisible();
+  const deployButton = page.getByRole("button", { name: /Deploy to GitHub/i });
+  await expect(deployButton).toBeVisible();
+  await expect(deployButton).toBeEnabled();
+  await deployButton.click();
 
-  await page.getByRole("tab", { name: /Generated Code/i }).click();
-  await expect(page.getByLabel("Generated Terraform output")).toContainText(
-    'resource "aws_s3_bucket" "demo" {}',
-  );
-  await expect(page.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
+  await expect(page.getByText("deploy", { exact: true })).toBeVisible();
+  await expect(page.locator('.chat-card-title').getByText(/GitOps Delivery/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /View Pull Request #7/i })).toBeVisible();
 });
-test("auto-fix issues handles blocked states", async ({ page }) => {
+
+test("auto-fix issues handles blocked states via chat", async ({ page }) => {
   await page.route("**/api/workflow", async (route) => {
     await route.fulfill({
       status: 200,
@@ -104,8 +97,8 @@ test("auto-fix issues handles blocked states", async ({ page }) => {
         generation: { status: "succeeded", used_fallback: false, message: "Generated" },
         terraform: { generated_code: "resource aws_s3_bucket demo {}", formatted_code: "resource aws_s3_bucket demo {}" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
-        security: { status: "failed", message: "Failed", findings: [], log: null },
-        readiness: { is_ready: false, status: "blocked_by_security", message: "Blocked", deploy_hint: "Cannot deploy" }
+        security: { status: "failed", message: "Security findings found", findings: [], log: null },
+        readiness: { is_ready: false, status: "blocked", message: "Blocked", deploy_hint: "" }
       }),
     });
   });
@@ -120,14 +113,15 @@ test("auto-fix issues handles blocked states", async ({ page }) => {
         terraform: { generated_code: "resource aws_s3_bucket demo { # fixed }", formatted_code: "resource aws_s3_bucket demo { # fixed }" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
         security: { status: "passed", message: "Passed", findings: [], log: null },
-        readiness: { is_ready: true, status: "ready", message: "Ready", deploy_hint: "Can deploy" }
+        readiness: { is_ready: true, status: "ready", message: "Ready", deploy_hint: "" }
       }),
     });
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: /Use sample prompt/i }).click();
-  await page.getByRole("button", { name: /Run workflow/i }).click();
+  const textarea = page.getByPlaceholder(/Describe the infrastructure you need/i);
+  await textarea.fill("Create S3 bucket");
+  await textarea.press("Enter");
 
   await expect(page.getByText(/Blocked/i).first()).toBeVisible();
   
@@ -135,6 +129,39 @@ test("auto-fix issues handles blocked states", async ({ page }) => {
   await expect(fixButton).toBeVisible();
   await fixButton.click();
 
+  // After click, agent runs FIX intent
+  await expect(page.getByText(/Analysing the issues and regenerating/i)).toBeVisible();
   await expect(page.getByText(/Ready/i).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /Deploy to GitHub/i })).toBeEnabled();
+});
+
+test("reset intent returns the chat thread to the welcome state", async ({ page }) => {
+  await page.route("**/api/workflow", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        request: { prompt: "First test message" },
+        generation: { status: "succeeded", used_fallback: false, message: "Generated" },
+        terraform: { generated_code: "resource demo {}", formatted_code: "resource demo {}" },
+        validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
+        security: { status: "passed", message: "Passed", findings: [], log: null },
+        readiness: { is_ready: true, status: "ready", message: "Ready", deploy_hint: "" }
+      }),
+    });
+  });
+
+  await page.goto("/");
+  const textarea = page.getByPlaceholder(/Describe the infrastructure you need/i);
+  const thread = page.locator(".chat-thread");
+
+  await textarea.fill("First test message");
+  await textarea.press("Enter");
+  await expect(thread.getByText("First test message")).toBeVisible();
+
+  await textarea.fill("reset");
+  await textarea.press("Enter");
+
+  await expect(thread.getByText(/Hello! Describe the AWS infrastructure/i)).toBeVisible();
+  await expect(thread.getByText("First test message")).not.toBeVisible();
+  await expect(thread.locator(".chat-bubble")).toHaveCount(1);
 });

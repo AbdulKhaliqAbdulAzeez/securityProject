@@ -1,5 +1,5 @@
-import { WorkflowShell } from "@/components/workflow/workflow-shell";
+import { ChatShell } from "@/components/chat/chat-shell";
 
 export default function Home() {
-  return <WorkflowShell />;
+  return <ChatShell />;
 }
