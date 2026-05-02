@@ -17,7 +17,8 @@ Every foundational feature should follow the same lifecycle:
 | Workstream | Status | Sprints | What It Produces |
 | ---------- | ------ | ------- | ---------------- |
 | [site-foundation](site-foundation/) | Complete | 6 | Repository bootstrap, generator contract, Terraform validation engine, Streamlit UI, safety hardening, QA pass |
-| [nextjs-platform-transition](nextjs-platform-transition/) | Planned | 6 | Next.js application shell, Python backend bridge, Checkov security gate, GitHub pull-request delivery |
+| [nextjs-platform-transition](nextjs-platform-transition/) | Complete | 6 | Next.js application shell, Python backend bridge, Checkov security gate, GitHub pull-request delivery, QA pass |
+| [ui-redesign](ui-redesign/) | Active | 4 | Design system update, premium dark theme, split-pane command center layout, AI workflow cues, QA pass |
 
 ## How To Read A Workstream
 
@@ -28,5 +29,6 @@ Every foundational feature should follow the same lifecycle:
 
 ## Current Program Order
 
-1. plan and implement `nextjs-platform-transition` before widening into hosted deployment or broader provider expansion
-2. define later workstreams for provider expansion, hosted deployment, or deeper evaluation only after the Next.js transition is stable
+1. use the completed `nextjs-platform-transition` workstream as the baseline before widening into hosted deployment or broader provider expansion
+2. execute the `ui-redesign` workstream to upgrade the Next.js baseline to a premium dark-mode developer tool UI for demo readiness
+3. define later workstreams for provider expansion, hosted deployment, or deeper evaluation only under a new approved spec

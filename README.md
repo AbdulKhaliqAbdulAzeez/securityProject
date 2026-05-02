@@ -1,30 +1,41 @@
 # AI-Powered Terraform Architect & Validator
 
-This repository is a documentation-first Python MVP that turns natural-language
-infrastructure requests into AWS Terraform, formats the generated HCL, and
-validates it locally with the Terraform CLI.
+This repository has completed its transition from a Python-only Streamlit MVP
+into a dual-stack project with a root Next.js frontend and a dedicated Python
+backend. The live application exposes the verified Terraform generation,
+validation, Checkov-backed security scanning, and GitOps pull-request delivery
+modules through a Python API that the Next.js frontend can call directly.
 
-The project adapts the orchestration, spec, and sprint workflow from the
-reference materials used during local project setup to a Python, Streamlit,
-and Terraform stack.
+## Current Product Surface
 
-## What The MVP Does
+- the Python backend still generates AWS-focused Terraform with a Gemini-first
+	Google Gen AI SDK integration
+- the backend still validates generated HCL locally with `terraform fmt`,
+	`terraform init`, and `terraform validate`
+- the backend now runs `checkov -d <temporary-workspace>` after Terraform
+	validation succeeds and blocks readiness on security findings
+- the backend now creates a unique GitHub branch, commits `main.tf`, and opens
+	a pull request after validation and Checkov both pass
+- the new root Next.js application now submits prompts through `app/api/workflow`
+	and renders live backend responses, specific Checkov warnings, and GitOps PR links
+- the Streamlit workflow remains available as a backend-side fallback surface
 
-- accepts a natural-language infrastructure request through a Streamlit UI
-- generates AWS-focused Terraform with a Gemini-first LangChain integration
-- writes the generated HCL into a temporary Terraform workspace
-- runs `terraform fmt`, `terraform init`, and `terraform validate`
-- shows formatted Terraform and validation logs side by side
-
-The MVP is intentionally validation-only. It does not run `terraform apply`,
-`terraform destroy`, or any equivalent deploy step.
+The system remains validation-only for infrastructure execution. It does not
+run `terraform apply`, `terraform destroy`, or any equivalent infrastructure
+deploy step. The GitOps path only creates a review branch and pull request.
 
 ## Repository Map
 
-- `app.py` - Streamlit interface for prompt input, HCL output, and validation logs
-- `ai_generator.py` - Gemini-first Terraform generation module with a safe fallback
-- `tf_validator.py` - temporary-workspace Terraform validation engine
-- `tests/` - baseline unit tests for the generation and validation modules
+- `app/` - Next.js App Router frontend scaffold for the transition workstream
+- `backend/` - Python generation, validation, and Streamlit workflow modules
+- `components/site/` - frontend shell components
+- `components/ui/` - reusable frontend primitives
+- `components/workflow/` - Terraform workflow-specific frontend components
+- `lib/` - shared frontend data and helper modules
+- `public/` - static assets used by the Next.js app
+- `tests/app/` - frontend unit and component tests run with Vitest
+- `tests/browser/` - browser smoke and end-to-end checks for the live workflow shell
+- `tests/python/` - backend pytest coverage
 - `docs/foundation/` - durable operating rules, quality rules, and workflow docs
 - `docs/_specs/` - governing spec and sprint artifacts for implementation
 - `docs/templates/` - reusable templates for later sprint, QA, and change-note work
@@ -49,11 +60,32 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. Configure Your Gemini API Key
+### 3. Install Checkov
+
+Install the Checkov CLI in the same shell environment you use for the backend:
+
+```bash
+pip install checkov
+checkov --version
+```
+
+If you install Checkov another way, make sure the `checkov` executable is still
+available on your shell path before you run the backend.
+
+### 4. Install Node.js Dependencies
+
+Use a current Node.js release that supports Next.js 16, then install the root
+frontend workspace dependencies:
+
+```bash
+npm install
+```
+
+### 5. Configure Your Gemini API Key
 
 Copy `.env.example` to `.env` and set either `GOOGLE_API_KEY` or
 `GEMINI_API_KEY`, or export one of those variables in your shell before
-starting the app.
+starting the backend workflow.
 
 ```bash
 cp .env.example .env
@@ -63,26 +95,77 @@ Then edit `.env` and add your key, for example:
 
 ```bash
 GOOGLE_API_KEY="your-key-here"
-GEMINI_MODEL="gemini-2.5-flash"
+GEMINI_MODEL="gemini-3-flash"
 ```
 
-If no key is configured, the app falls back to a safe starter Terraform file so
-the validation loop and UI can still be demonstrated.
+The backend normalizes `gemini-3-flash` to the current Gemini Developer API
+runtime alias automatically, so the configured intent stays stable even when
+the live model name is exposed as `gemini-3-flash-preview`.
 
-### 4. Run The Streamlit App
+If no key is configured, the backend falls back to a safe starter Terraform
+file so the validation and security loop can still be demonstrated.
+
+### 6. Configure GitHub Delivery Settings
+
+Set the GitHub values the backend needs before using `Deploy to GitHub`:
 
 ```bash
-streamlit run app.py
+GITHUB_TOKEN="your-token-here"
+GITHUB_REPOSITORY="owner/repository"
+GITHUB_BASE_BRANCH="main"
 ```
+
+Use a token with repository contents and pull-request permissions scoped to a
+test repository where possible. The token must stay server-side and should
+never be exposed in client code or browser logs.
+
+## Run The Project Locally
+
+Run the Python workflow API in one terminal:
+
+```bash
+python -m uvicorn backend.api:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the Next.js frontend in a second terminal:
+
+```bash
+npm run dev
+```
+
+If your backend is not running on `http://127.0.0.1:8000`, set
+`BACKEND_API_BASE_URL` before starting the frontend.
+
+Run the existing Streamlit workflow from the new backend location:
+
+```bash
+streamlit run backend/streamlit_app.py
+```
+
+The Streamlit surface remains useful as a backend-side reference flow, but the
+primary web workflow now runs through the Next.js UI plus the Python API bridge.
 
 ## Verification Commands
 
-The baseline local quality commands are:
+The current verification commands are:
 
 ```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+npm run test:browser
 ruff format --check .
 ruff check .
 pytest
+checkov --version
+```
+
+Manual smoke testing for GitOps delivery still requires a configured GitHub
+token, repository target, and running backend/frontend pair:
+
+```bash
+npm run dev
 ```
 
 ## Orchestration Alignment
@@ -95,7 +178,7 @@ orchestration project:
 3. implementation follows one sprint at a time
 4. QA is treated as a separate pass
 
-The adapted method for this Python repository is documented under
-`docs/foundation/`, and the completed `site-foundation` workstream artifacts
-live under `docs/_specs/site-foundation/`.
+The original Python MVP artifacts live under `docs/_specs/site-foundation/`.
+The active dual-stack transition workstream lives under
+`docs/_specs/nextjs-platform-transition/`.
 

@@ -1,0 +1,1 @@
+Browser coverage now starts with a Sprint 1 smoke test for the workflow shell.

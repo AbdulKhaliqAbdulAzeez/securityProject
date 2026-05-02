@@ -19,9 +19,17 @@ ENV/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.codex
+.playwright-mcp/
+.next/
+node_modules/
+*.tsbuildinfo
 .coverage
 coverage.xml
 htmlcov/
+coverage/
+test-results/
+playwright-report/
 
 # Environment and local secrets
 .env

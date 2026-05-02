@@ -11,7 +11,7 @@ teaching surface.
 ### Python 3.x
 
 Python is the primary implementation language for the MVP. It is used for the
-Streamlit interface, the LangChain integration, and the Terraform validation
+Streamlit interface, the Gemini integration, and the Terraform validation
 workflow.
 
 ### Streamlit
@@ -20,11 +20,11 @@ Streamlit is the UI layer. It gives the project a fast, low-friction way to
 present a prompt box, generated Terraform output, and validation logs without
 building a separate frontend stack.
 
-### LangChain
+### Google Gen AI SDK
 
-LangChain is the orchestration layer around the LLM call. In this MVP it keeps
-the generation step explicit and replaceable while still allowing future
-provider expansion.
+Google's Gen AI SDK is the runtime client for Gemini requests. In this MVP it
+keeps the generation step explicit, close to the provider API, and easier to
+debug than the previous abstraction-heavy client path.
 
 ### Gemini
 

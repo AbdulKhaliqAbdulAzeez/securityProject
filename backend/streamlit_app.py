@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ai_generator import generate_terraform, is_api_key_configured
-from tf_validator import validate_terraform
+from backend.ai_generator import generate_terraform, is_api_key_configured
+from backend.tf_validator import validate_terraform
 
 DEFAULT_PROMPT = (
     "Create a highly available AWS EC2 web server with an application load "

@@ -1,10 +1,15 @@
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["tests"]
+testpaths = ["tests/python"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+exclude = [
+  "fix_tests.py",
+  "modify_css.py",
+  "update_layout_css.py",
+]
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
