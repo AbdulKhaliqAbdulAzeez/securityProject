@@ -24,6 +24,10 @@ const emptyContext: AgentContext = {
   securityFindings: "",
   isReady: false,
   prompt: "",
+  readinessStatus: "",
+  validationStatus: "",
+  securityStatus: "",
+  securityFindingCount: 0,
 };
 
 const blockedContext: AgentContext = {
@@ -32,6 +36,10 @@ const blockedContext: AgentContext = {
   securityFindings: "S3 bucket encryption missing",
   isReady: false,
   prompt: "Create an S3 bucket",
+  readinessStatus: "blocked_by_security",
+  validationStatus: "passed",
+  securityStatus: "failed",
+  securityFindingCount: 1,
 };
 
 const readyContext: AgentContext = {
@@ -71,6 +79,31 @@ const workflowResponse: WorkflowApiResponse = {
     status: "ready",
     message: "Ready for GitOps delivery.",
     deploy_hint: "Deploy when ready.",
+  },
+};
+
+const workflowResponseWithSecurityFindings: WorkflowApiResponse = {
+  ...workflowResponse,
+  security: {
+    status: "failed",
+    message: "Checkov reported blocking security findings.",
+    findings: [
+      {
+        check_id: "CKV_AWS_20",
+        check_name: "S3 Bucket has an ACL defined which allows public READ access.",
+        resource: "aws_s3_bucket.demo",
+        file_path: "/main.tf",
+        file_line_range: "1-3",
+        guideline: "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-general-policies/bc-aws-s3-1",
+      },
+    ],
+    log: null,
+  },
+  readiness: {
+    is_ready: false,
+    status: "blocked_by_security_findings",
+    message: "Blocked by Checkov security findings.",
+    deploy_hint: "Resolve findings before deploy.",
   },
 };
 
@@ -126,12 +159,60 @@ describe("chat agent", () => {
       blockedContext.prompt,
       blockedContext.terraformCode,
       blockedContext.validationErrors,
-      blockedContext.securityFindings
+      blockedContext.securityFindings,
+      {
+        readinessStatus: blockedContext.readinessStatus,
+        validationStatus: blockedContext.validationStatus,
+        securityStatus: blockedContext.securityStatus,
+        securityFindingCount: blockedContext.securityFindingCount,
+      }
     );
     expect(result.messages[0]).toMatchObject({
       cardType: "text",
-      text: "Analysing the issues and regenerating...",
+      text: "I'm repairing the Checkov security findings and will re-run the workflow checks.",
     });
+  });
+
+  it("stores structured Checkov findings so auto-fix receives actionable context", async () => {
+    vi.mocked(submitWorkflowRequest).mockResolvedValue(
+      workflowResponseWithSecurityFindings
+    );
+    vi.mocked(submitFixRequest).mockResolvedValue(workflowResponse);
+
+    const generateResult = await runAgent("Create an S3 bucket", emptyContext);
+    const fixContext = {
+      ...emptyContext,
+      ...generateResult.nextContext,
+    };
+
+    await runAgent("fix", fixContext);
+
+    expect(submitFixRequest).toHaveBeenCalledWith(
+      "Create an S3 bucket",
+      workflowResponse.terraform.formatted_code,
+      "",
+      expect.stringContaining("CKV_AWS_20"),
+      {
+        readinessStatus: "blocked_by_security_findings",
+        validationStatus: "passed",
+        securityStatus: "failed",
+        securityFindingCount: 1,
+      }
+    );
+    expect(submitFixRequest).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      expect.stringContaining("aws_s3_bucket.demo"),
+      expect.any(Object)
+    );
+    expect(submitFixRequest).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      expect.stringContaining("/main.tf:1-3"),
+      expect.any(Object)
+    );
   });
 
   it("returns a delivery card when ready code is deployed", async () => {

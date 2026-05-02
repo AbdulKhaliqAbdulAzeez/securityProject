@@ -49,6 +49,36 @@ def post_deploy(prompt: str, terraform_code: str) -> RouteResponse:
     return RouteResponse(200, jsonable_encoder(response))
 
 
+def post_fix(
+    *,
+    prompt: str,
+    terraform_code: str,
+    validation_errors: str = "",
+    security_findings: str = "",
+    readiness_status: str = "",
+    validation_status: str = "",
+    security_status: str = "",
+    security_finding_count: int = 0,
+) -> RouteResponse:
+    try:
+        response = api.submit_fix(
+            api.FixRequest(
+                prompt=prompt,
+                terraform_code=terraform_code,
+                validation_errors=validation_errors,
+                security_findings=security_findings,
+                readiness_status=readiness_status,
+                validation_status=validation_status,
+                security_status=security_status,
+                security_finding_count=security_finding_count,
+            )
+        )
+    except HTTPException as error:
+        return RouteResponse(error.status_code, {"detail": error.detail})
+
+    return RouteResponse(200, jsonable_encoder(response))
+
+
 def create_security_scan_result(
     *,
     status: str = "passed",
@@ -301,6 +331,107 @@ def test_submit_workflow_blocks_readiness_when_checkov_is_missing(monkeypatch) -
     assert body["security"]["log"]["command"] == "checkov"
     assert body["readiness"]["is_ready"] is False
     assert body["readiness"]["status"] == "blocked_by_security_setup"
+
+
+def test_submit_fix_accepts_legacy_payload_without_metadata(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_generate_fixed_terraform_result(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return GenerationResult(
+            terraform='resource "aws_s3_bucket" "demo" {}',
+            used_fallback=False,
+            message="Terraform successfully auto-fixed from the Gemini model.",
+        )
+
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        fake_generate_fixed_terraform_result,
+    )
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(),
+        ),
+    )
+
+    response = post_fix(
+        prompt="Create an AWS S3 bucket",
+        terraform_code='resource "aws_s3_bucket" "demo" {}',
+    )
+
+    assert response.status_code == 200
+    assert captured["args"] == (
+        "Create an AWS S3 bucket",
+        'resource "aws_s3_bucket" "demo" {}',
+        "",
+        "",
+    )
+    assert captured["kwargs"] == {
+        "readiness_status": "",
+        "validation_status": "",
+        "security_status": "",
+        "security_finding_count": 0,
+    }
+
+
+def test_submit_fix_forwards_hidden_repair_metadata(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_generate_fixed_terraform_result(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return GenerationResult(
+            terraform='resource "aws_s3_bucket" "demo" {}',
+            used_fallback=False,
+            message="Terraform successfully auto-fixed from the Gemini model.",
+        )
+
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        fake_generate_fixed_terraform_result,
+    )
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(),
+        ),
+    )
+
+    response = post_fix(
+        prompt="Create an AWS S3 bucket",
+        terraform_code='resource "aws_s3_bucket" "demo" {}',
+        security_findings="CKV_AWS_20 on aws_s3_bucket.demo",
+        readiness_status="blocked_by_security",
+        validation_status="passed",
+        security_status="failed",
+        security_finding_count=1,
+    )
+
+    assert response.status_code == 200
+    assert captured["args"] == (
+        "Create an AWS S3 bucket",
+        'resource "aws_s3_bucket" "demo" {}',
+        "",
+        "CKV_AWS_20 on aws_s3_bucket.demo",
+    )
+    assert captured["kwargs"] == {
+        "readiness_status": "blocked_by_security",
+        "validation_status": "passed",
+        "security_status": "failed",
+        "security_finding_count": 1,
+    }
 
 
 def test_submit_deploy_returns_pull_request_metadata(monkeypatch) -> None:

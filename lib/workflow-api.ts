@@ -52,6 +52,13 @@ export type WorkflowApiResponse = {
   };
 };
 
+export type WorkflowFixMetadata = {
+  readinessStatus?: string;
+  validationStatus?: WorkflowApiResponse["validation"]["status"] | "";
+  securityStatus?: WorkflowApiResponse["security"]["status"] | "";
+  securityFindingCount?: number;
+};
+
 export type WorkflowDeployResponse = {
   request: {
     prompt: string;
@@ -141,6 +148,7 @@ export async function submitFixRequest(
   terraformCode: string,
   validationErrors: string,
   securityFindings: string,
+  metadata: WorkflowFixMetadata = {},
 ): Promise<WorkflowApiResponse> {
   const normalizedPrompt = prompt.trim();
   const normalizedTerraformCode = terraformCode.trim();
@@ -159,6 +167,10 @@ export async function submitFixRequest(
       terraform_code: normalizedTerraformCode,
       validation_errors: validationErrors,
       security_findings: securityFindings,
+      readiness_status: metadata.readinessStatus ?? "",
+      validation_status: metadata.validationStatus ?? "",
+      security_status: metadata.securityStatus ?? "",
+      security_finding_count: metadata.securityFindingCount ?? 0,
     }),
   });
 

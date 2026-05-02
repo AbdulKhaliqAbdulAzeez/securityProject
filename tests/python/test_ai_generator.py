@@ -8,6 +8,7 @@ import pytest
 from backend.ai_generator import (
     FALLBACK_TERRAFORM,
     _strip_markdown_fences,
+    generate_fixed_terraform_result,
     generate_terraform,
     generate_terraform_result,
 )
@@ -218,3 +219,33 @@ def test_generate_terraform_result_reports_model_failure_details(monkeypatch) ->
     assert result.terraform == FALLBACK_TERRAFORM
     assert result.used_fallback is True
     assert "RuntimeError: model not found" in result.message
+
+
+def test_generate_fixed_terraform_includes_hidden_repair_context(monkeypatch) -> None:
+    _, fake_models = _install_fake_genai_module(
+        monkeypatch,
+        response='resource "aws_s3_bucket" "demo" {}',
+    )
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    result = generate_fixed_terraform_result(
+        "Create an AWS S3 bucket",
+        'resource "aws_s3_bucket" "demo" {}',
+        "terraform validate failed",
+        "Finding 1\nCheck: CKV_AWS_20\nResource: aws_s3_bucket.demo",
+        readiness_status="blocked_by_security",
+        validation_status="passed",
+        security_status="failed",
+        security_finding_count=1,
+    )
+
+    assert result.terraform == 'resource "aws_s3_bucket" "demo" {}'
+    prompt = fake_models.calls[0]["contents"]
+    assert "Preserve the original infrastructure intent" in prompt
+    assert "blocked_by_security" in prompt
+    assert "terraform validate failed" in prompt
+    assert "CKV_AWS_20" in prompt
+    assert "Checkov finding count:" in prompt
+    assert "1" in prompt
+    assert "Return only valid Terraform HCL." in prompt

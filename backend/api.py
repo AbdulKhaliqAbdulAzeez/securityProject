@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from backend.ai_generator import (
-    generate_terraform_result,
     generate_fixed_terraform_result,
+    generate_terraform_result,
 )
 from backend.gitops_manager import (
     GitOpsConfigurationError,
@@ -22,6 +22,10 @@ class FixRequest(BaseModel):
     terraform_code: str
     validation_errors: str
     security_findings: str
+    readiness_status: str = ""
+    validation_status: str = ""
+    security_status: str = ""
+    security_finding_count: int = 0
 
 
 class WorkflowRequest(BaseModel):
@@ -285,6 +289,10 @@ def submit_fix(request: FixRequest) -> WorkflowResponse:
             request.terraform_code.strip(),
             request.validation_errors.strip(),
             request.security_findings.strip(),
+            readiness_status=request.readiness_status.strip(),
+            validation_status=request.validation_status.strip(),
+            security_status=request.security_status.strip(),
+            security_finding_count=request.security_finding_count,
         )
         return _build_response_from_generation_result(prompt, generation_result)
     except ValueError as error:

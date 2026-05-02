@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChatMessage as ChatMessageType } from "@/lib/chat-state";
+import { ChatAction, ChatMessage as ChatMessageType } from "@/lib/chat-state";
 import { CodeCard } from "./cards/code-card";
 import { ValidationCard } from "./cards/validation-card";
 import { SecurityCard } from "./cards/security-card";
@@ -10,7 +10,7 @@ import { DeliveryCard } from "./cards/delivery-card";
 
 interface ChatMessageProps {
   message: ChatMessageType;
-  onAction?: (action: string) => void;
+  onAction?: (action: ChatAction) => void;
   index?: number;
 }
 

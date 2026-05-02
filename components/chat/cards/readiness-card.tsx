@@ -1,16 +1,18 @@
 "use client";
 
 import React from "react";
+import { ChatAction } from "@/lib/chat-state";
 import { WorkflowApiResponse } from "@/lib/workflow-api";
 
 interface ReadinessCardProps {
   readiness: WorkflowApiResponse["readiness"];
-  onAction: (action: string) => void;
+  onAction: (action: ChatAction) => void;
 }
 
 export function ReadinessCard({ readiness, onAction }: ReadinessCardProps) {
   const isReady = readiness.is_ready;
   const blockedGate = getBlockedGate(readiness.status, readiness.message);
+  const fixVisibleText = getFixVisibleText(readiness.status, readiness.message);
 
   return (
     <div
@@ -41,7 +43,9 @@ export function ReadinessCard({ readiness, onAction }: ReadinessCardProps) {
         {isReady ? (
           <button
             className="button button--primary"
-            onClick={() => onAction("deploy")}
+            onClick={() =>
+              onAction({ type: "deploy", visibleText: "Deploy to GitHub" })
+            }
             aria-label="Deploy to GitHub"
           >
             Deploy to GitHub →
@@ -49,7 +53,7 @@ export function ReadinessCard({ readiness, onAction }: ReadinessCardProps) {
         ) : (
           <button
             className="button button--danger"
-            onClick={() => onAction("fix")}
+            onClick={() => onAction({ type: "fix", visibleText: fixVisibleText })}
             aria-label="Auto-Fix Issues"
           >
             Auto-Fix Issues
@@ -64,6 +68,29 @@ export function ReadinessCard({ readiness, onAction }: ReadinessCardProps) {
       )}
     </div>
   );
+}
+
+function getFixVisibleText(status: string, message: string) {
+  const searchable = `${status} ${message}`.toLowerCase();
+
+  if (
+    searchable.includes("scanner_unavailable") ||
+    searchable.includes("security_setup") ||
+    searchable.includes("not found") ||
+    searchable.includes("unavailable")
+  ) {
+    return "Fixing the workflow blocker before security scanning can complete.";
+  }
+
+  if (searchable.includes("security") || searchable.includes("checkov")) {
+    return "Fixing Checkov security findings.";
+  }
+
+  if (searchable.includes("validat") || searchable.includes("terraform")) {
+    return "Fixing Terraform validation errors.";
+  }
+
+  return "Fixing blocked workflow checks.";
 }
 
 function getBlockedGate(status: string, message: string) {

@@ -117,7 +117,10 @@ describe("chat result cards", () => {
 
     expect(screen.getByText("Security gate failed")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /auto-fix issues/i }));
-    expect(onAction).toHaveBeenCalledWith("fix");
+    expect(onAction).toHaveBeenCalledWith({
+      type: "fix",
+      visibleText: "Fixing Checkov security findings.",
+    });
 
     rerender(
       <ReadinessCard
@@ -132,7 +135,10 @@ describe("chat result cards", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /deploy to github/i }));
-    expect(onAction).toHaveBeenCalledWith("deploy");
+    expect(onAction).toHaveBeenCalledWith({
+      type: "deploy",
+      visibleText: "Deploy to GitHub",
+    });
   });
 
   it("renders delivery metadata and pull request link", () => {

@@ -25,6 +25,16 @@ export type ChatMessage = {
   timestamp: number;
 };
 
+export type ChatAction =
+  | {
+      type: "fix";
+      visibleText: string;
+    }
+  | {
+      type: "deploy";
+      visibleText?: string;
+    };
+
 export type ChatState = {
   messages: ChatMessage[];
   terraformCode: string;

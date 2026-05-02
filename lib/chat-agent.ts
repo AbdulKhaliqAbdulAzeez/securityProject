@@ -1,5 +1,6 @@
 import { ChatMessage, createAssistantMessage } from "./chat-state";
 import {
+  WorkflowSecurityFinding,
   WorkflowDeployResponse,
   WorkflowApiResponse,
   submitFixRequest,
@@ -13,6 +14,10 @@ export type AgentContext = {
   securityFindings: string;
   isReady: boolean;
   prompt: string;
+  readinessStatus: string;
+  validationStatus: WorkflowApiResponse["validation"]["status"] | "";
+  securityStatus: WorkflowApiResponse["security"]["status"] | "";
+  securityFindingCount: number;
 };
 
 export type AgentResult = {
@@ -92,6 +97,33 @@ function deliveryResponseToMessage(response: WorkflowDeployResponse): ChatMessag
   });
 }
 
+function formatSecurityFindingsForFix(
+  message: string,
+  findings: WorkflowSecurityFinding[]
+): string {
+  const normalizedMessage = message.trim();
+
+  if (findings.length === 0) {
+    return normalizedMessage;
+  }
+
+  const formattedFindings = findings
+    .map((finding, index) => {
+      const details = [
+        `Finding ${index + 1}`,
+        `Check: ${finding.check_id} - ${finding.check_name}`,
+        `Resource: ${finding.resource}`,
+        `Location: ${finding.file_path}:${finding.file_line_range}`,
+        finding.guideline ? `Guideline: ${finding.guideline}` : "",
+      ].filter(Boolean);
+
+      return details.join("\n");
+    })
+    .join("\n\n");
+
+  return [normalizedMessage, formattedFindings].filter(Boolean).join("\n\n");
+}
+
 function responseToContext(
   response: WorkflowApiResponse,
   prompt?: string
@@ -104,10 +136,31 @@ function responseToContext(
         ? response.validation.combined_log
         : "",
     securityFindings:
-      response.security.status === "failed" ? response.security.message : "",
+      response.security.status === "failed"
+        ? formatSecurityFindingsForFix(
+            response.security.message,
+            response.security.findings
+          )
+        : "",
     isReady: response.readiness.is_ready,
+    readinessStatus: response.readiness.status,
+    validationStatus: response.validation.status,
+    securityStatus: response.security.status,
+    securityFindingCount: response.security.findings.length,
     ...(prompt === undefined ? {} : { prompt }),
   };
+}
+
+function buildFixPreamble(context: AgentContext): string {
+  if (context.validationStatus === "failed") {
+    return "I'm repairing the Terraform validation errors and will re-run validation and security scanning.";
+  }
+
+  if (context.securityStatus === "failed" || context.securityFindingCount > 0) {
+    return "I'm repairing the Checkov security findings and will re-run the workflow checks.";
+  }
+
+  return "I'm repairing the blocked workflow checks and will re-run validation and security scanning.";
 }
 
 export async function runAgent(
@@ -131,12 +184,18 @@ export async function runAgent(
           context.prompt,
           context.terraformCode,
           context.validationErrors,
-          context.securityFindings
+          context.securityFindings,
+          {
+            readinessStatus: context.readinessStatus,
+            validationStatus: context.validationStatus,
+            securityStatus: context.securityStatus,
+            securityFindingCount: context.securityFindingCount,
+          }
         );
         return {
           messages: [
             createAssistantMessage("text", {
-              text: "Analysing the issues and regenerating...",
+              text: buildFixPreamble(context),
             }),
             ...workflowResponseToMessages(response, context.prompt),
           ],
@@ -175,6 +234,10 @@ export async function runAgent(
             securityFindings: "",
             isReady: false,
             prompt: "",
+            readinessStatus: "",
+            validationStatus: "",
+            securityStatus: "",
+            securityFindingCount: 0,
           },
           reset: true,
         };

@@ -82,12 +82,21 @@ test("chat command center renders workflow cards and deploys ready code", async 
   await expect(deployButton).toBeEnabled();
   await deployButton.click();
 
-  await expect(page.getByText("deploy", { exact: true })).toBeVisible();
+  await expect(page.getByText("Deploy to GitHub", { exact: true })).toBeVisible();
   await expect(page.locator('.chat-card-title').getByText(/GitOps Delivery/i)).toBeVisible();
   await expect(page.getByRole("link", { name: /View Pull Request #7/i })).toBeVisible();
 });
 
 test("auto-fix issues handles blocked states via chat", async ({ page }) => {
+  const securityFinding = {
+    check_id: "CKV_AWS_20",
+    check_name: "S3 Bucket has an ACL defined which allows public READ access.",
+    resource: "aws_s3_bucket.demo",
+    file_path: "/main.tf",
+    file_line_range: "1-3",
+    guideline: "https://docs.prismacloud.io/policy-reference/aws-policies/aws-general-policies/bc-aws-s3-1",
+  };
+
   await page.route("**/api/workflow", async (route) => {
     await route.fulfill({
       status: 200,
@@ -97,13 +106,22 @@ test("auto-fix issues handles blocked states via chat", async ({ page }) => {
         generation: { status: "succeeded", used_fallback: false, message: "Generated" },
         terraform: { generated_code: "resource aws_s3_bucket demo {}", formatted_code: "resource aws_s3_bucket demo {}" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
-        security: { status: "failed", message: "Security findings found", findings: [], log: null },
-        readiness: { is_ready: false, status: "blocked", message: "Blocked", deploy_hint: "" }
+        security: { status: "failed", message: "Security findings found", findings: [securityFinding], log: null },
+        readiness: { is_ready: false, status: "blocked_by_security", message: "Blocked by Checkov security findings.", deploy_hint: "" }
       }),
     });
   });
 
   await page.route("**/api/fix", async (route) => {
+    const requestBody = route.request().postDataJSON();
+    expect(requestBody.security_findings).toContain("CKV_AWS_20");
+    expect(requestBody.security_findings).toContain("aws_s3_bucket.demo");
+    expect(requestBody.security_findings).toContain("/main.tf:1-3");
+    expect(requestBody.readiness_status).toBe("blocked_by_security");
+    expect(requestBody.validation_status).toBe("passed");
+    expect(requestBody.security_status).toBe("failed");
+    expect(requestBody.security_finding_count).toBe(1);
+
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -129,8 +147,9 @@ test("auto-fix issues handles blocked states via chat", async ({ page }) => {
   await expect(fixButton).toBeVisible();
   await fixButton.click();
 
-  // After click, agent runs FIX intent
-  await expect(page.getByText(/Analysing the issues and regenerating/i)).toBeVisible();
+  await expect(page.getByText("Fixing Checkov security findings.")).toBeVisible();
+  await expect(page.getByText("fix", { exact: true })).not.toBeVisible();
+  await expect(page.getByText(/repairing the Checkov security findings/i)).toBeVisible();
   await expect(page.getByText(/Ready/i).first()).toBeVisible();
 });
 

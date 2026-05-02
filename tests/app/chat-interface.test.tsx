@@ -126,4 +126,59 @@ describe("Chat Interface", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Backend unavailable.");
     expect(screen.getByText("System Error")).toBeInTheDocument();
   });
+
+  it("shows descriptive fix action text while sending the hidden fix command", async () => {
+    vi.mocked(runAgent)
+      .mockResolvedValueOnce({
+        messages: [
+          createAssistantMessage("readiness", {
+            readiness: {
+              is_ready: false,
+              status: "blocked_by_security",
+              message: "Blocked by Checkov security findings.",
+              deploy_hint: "Fix issues before deployment.",
+            },
+          }),
+        ],
+        nextContext: {
+          terraformCode: "resource demo {}",
+          prompt: "Create S3 bucket",
+          readinessStatus: "blocked_by_security",
+          validationStatus: "passed",
+          securityStatus: "failed",
+          securityFindingCount: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          createAssistantMessage("text", {
+            text: "I'm repairing the Checkov security findings and will re-run the workflow checks.",
+          }),
+        ],
+        nextContext: {},
+      });
+
+    render(<Home />);
+
+    const input = screen.getByPlaceholderText(/Describe the infrastructure you need/i);
+    fireEvent.change(input, { target: { value: "Create S3 bucket" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Send message/i }));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /auto-fix issues/i }));
+    });
+
+    expect(runAgent).toHaveBeenLastCalledWith(
+      "fix",
+      expect.objectContaining({
+        readinessStatus: "blocked_by_security",
+        securityStatus: "failed",
+      })
+    );
+    expect(screen.getByText("Fixing Checkov security findings.")).toBeInTheDocument();
+    expect(screen.queryByText("fix")).not.toBeInTheDocument();
+  });
 });

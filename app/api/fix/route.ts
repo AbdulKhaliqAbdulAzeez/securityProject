@@ -35,27 +35,34 @@ function readErrorMessage(payload: unknown): string {
   return "Backend fix request failed.";
 }
 
+function readStringField(payload: unknown, fieldName: string): string {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const value = (payload as Record<string, unknown>)[fieldName];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readNumberField(payload: unknown, fieldName: string): number {
+  if (!payload || typeof payload !== "object") {
+    return 0;
+  }
+
+  const value = (payload as Record<string, unknown>)[fieldName];
+  return typeof value === "number" ? value : 0;
+}
+
 export async function POST(request: Request) {
   const payload = await readJsonPayload(request);
-  const prompt =
-    payload && typeof payload === "object" && "prompt" in payload && typeof payload.prompt === "string"
-      ? payload.prompt.trim()
-      : "";
-
-  const terraformCode =
-    payload && typeof payload === "object" && "terraform_code" in payload && typeof payload.terraform_code === "string"
-      ? payload.terraform_code.trim()
-      : "";
-
-  const validationErrors =
-    payload && typeof payload === "object" && "validation_errors" in payload && typeof payload.validation_errors === "string"
-      ? payload.validation_errors.trim()
-      : "";
-
-  const securityFindings =
-    payload && typeof payload === "object" && "security_findings" in payload && typeof payload.security_findings === "string"
-      ? payload.security_findings.trim()
-      : "";
+  const prompt = readStringField(payload, "prompt");
+  const terraformCode = readStringField(payload, "terraform_code");
+  const validationErrors = readStringField(payload, "validation_errors");
+  const securityFindings = readStringField(payload, "security_findings");
+  const readinessStatus = readStringField(payload, "readiness_status");
+  const validationStatus = readStringField(payload, "validation_status");
+  const securityStatus = readStringField(payload, "security_status");
+  const securityFindingCount = readNumberField(payload, "security_finding_count");
 
   if (!prompt) {
     return NextResponse.json(
@@ -74,7 +81,11 @@ export async function POST(request: Request) {
         prompt,
         terraform_code: terraformCode,
         validation_errors: validationErrors,
-        security_findings: securityFindings
+        security_findings: securityFindings,
+        readiness_status: readinessStatus,
+        validation_status: validationStatus,
+        security_status: securityStatus,
+        security_finding_count: securityFindingCount,
       }),
       cache: "no-store",
     });

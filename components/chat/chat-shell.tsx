@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import {
+  ChatAction,
   ChatState,
   initialChatState,
   createUserMessage,
@@ -16,6 +17,10 @@ const initialContext: AgentContext = {
   securityFindings: "",
   isReady: false,
   prompt: "",
+  readinessStatus: "",
+  validationStatus: "",
+  securityStatus: "",
+  securityFindingCount: 0,
 };
 
 export function ChatShell() {
@@ -49,12 +54,15 @@ export function ChatShell() {
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (
+    text: string,
+    options: { visibleText?: string } = {}
+  ) => {
     if (state.isBusy) {
       return;
     }
 
-    const userMsg = createUserMessage(text);
+    const userMsg = createUserMessage(options.visibleText ?? text);
     setState((prev) => {
       const thinkingMsg = {
         id: `thinking-${Date.now()}`,
@@ -100,8 +108,19 @@ export function ChatShell() {
     }
   };
 
+  const handleAction = (action: ChatAction) => {
+    if (action.type === "fix") {
+      void handleSend("fix", { visibleText: action.visibleText });
+      return;
+    }
+
+    void handleSend("deploy", {
+      visibleText: action.visibleText ?? "Deploy to GitHub",
+    });
+  };
+
   return (
-    <div className="chat-frame">
+    <div className={`chat-frame ${state.messages.length === 1 ? "chat-frame--empty" : ""}`}>
       {toast && (
         <div className="chat-toast" role="status" aria-live="polite">
           <span className="chat-toast__title">Workflow issue</span>
@@ -113,7 +132,7 @@ export function ChatShell() {
           <ChatMessage
             key={msg.id}
             message={msg}
-            onAction={handleSend}
+            onAction={handleAction}
             index={index}
           />
         ))}

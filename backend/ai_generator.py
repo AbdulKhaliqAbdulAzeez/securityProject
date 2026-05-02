@@ -85,24 +85,44 @@ def _build_fix_prompt(
     terraform_code: str,
     validation_errors: str,
     security_findings: str,
+    readiness_status: str = "",
+    validation_status: str = "",
+    security_status: str = "",
+    security_finding_count: int = 0,
 ) -> str:
     return dedent(
         f"""
-        You are a DevOps and Security expert fixing Terraform code.
-        
-        Original User Request:
+        You are a DevOps and security engineer repairing a Terraform document.
+
+        Preserve the original infrastructure intent. Fix only the blockers
+        described below unless a small supporting change is required for a valid,
+        secure Terraform configuration.
+
+        Original user request:
         {user_request.strip()}
-        
-        Current Terraform Code:
+
+        Current Terraform code:
         {terraform_code.strip()}
-        
-        Validation Errors:
+
+        Readiness status:
+        {readiness_status.strip() or "unknown"}
+
+        Terraform validation status:
+        {validation_status.strip() or "unknown"}
+
+        Validation errors or logs:
         {validation_errors.strip() or "None"}
-        
-        Security Findings (Checkov):
+
+        Checkov security status:
+        {security_status.strip() or "unknown"}
+
+        Checkov finding count:
+        {security_finding_count}
+
+        Checkov findings:
         {security_findings.strip() or "None"}
-        
-        Please provide the fully corrected Terraform HCL code that fixes these issues.
+
+        Return the complete corrected Terraform HCL for main.tf.
         Return only valid Terraform HCL.
         Do not return Markdown fences.
         Do not explain the output.
@@ -248,6 +268,10 @@ def generate_fixed_terraform_result(
     terraform_code: str,
     validation_errors: str,
     security_findings: str,
+    readiness_status: str = "",
+    validation_status: str = "",
+    security_status: str = "",
+    security_finding_count: int = 0,
 ) -> GenerationResult:
     if not user_request.strip():
         raise ValueError("A natural-language infrastructure request is required.")
@@ -262,17 +286,27 @@ def generate_fixed_terraform_result(
 
     try:
         from google import genai
+
         client_kwargs: dict[str, Any] = {"api_key": api_key}
         api_version = os.getenv("GEMINI_API_VERSION")
         if api_version:
             client_kwargs["http_options"] = {"api_version": api_version}
 
-        model_name = _resolve_model_name(os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL))
+        model_name = _resolve_model_name(
+            os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        )
         with genai.Client(**client_kwargs) as client:
             response = client.models.generate_content(
                 model=model_name,
                 contents=_build_fix_prompt(
-                    user_request, terraform_code, validation_errors, security_findings
+                    user_request,
+                    terraform_code,
+                    validation_errors,
+                    security_findings,
+                    readiness_status,
+                    validation_status,
+                    security_status,
+                    security_finding_count,
                 ),
                 config={"temperature": 0},
             )
