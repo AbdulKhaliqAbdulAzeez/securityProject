@@ -19,6 +19,8 @@ ENV/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.codex
+.playwright-mcp/
 .next/
 node_modules/
 *.tsbuildinfo

@@ -53,6 +53,13 @@ class SecurityScanResult:
 
 
 @dataclass
+class CheckovParseResult:
+    is_valid: bool
+    findings: list[SecurityFinding]
+    error: str = ""
+
+
+@dataclass
 class ValidationResult:
     success: bool
     formatted_code: str
@@ -101,25 +108,45 @@ def _format_line_range(line_range: object) -> str:
     return f"{integer_lines[0]}-{integer_lines[-1]}"
 
 
-def _extract_checkov_findings(stdout: str) -> list[SecurityFinding]:
+def _parse_checkov_output(stdout: str) -> CheckovParseResult:
     if not stdout:
-        return []
+        return CheckovParseResult(
+            is_valid=False,
+            findings=[],
+            error="Checkov did not return JSON output.",
+        )
 
     try:
         payload = json.loads(stdout)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as error:
+        return CheckovParseResult(
+            is_valid=False,
+            findings=[],
+            error=f"Checkov returned invalid JSON: {error.msg}.",
+        )
 
     if not isinstance(payload, dict):
-        return []
+        return CheckovParseResult(
+            is_valid=False,
+            findings=[],
+            error="Checkov JSON output was not an object.",
+        )
 
     results = payload.get("results")
     if not isinstance(results, dict):
-        return []
+        return CheckovParseResult(
+            is_valid=False,
+            findings=[],
+            error="Checkov JSON output did not include a results object.",
+        )
 
     failed_checks = results.get("failed_checks")
     if not isinstance(failed_checks, list):
-        return []
+        return CheckovParseResult(
+            is_valid=False,
+            findings=[],
+            error="Checkov JSON output did not include a failed_checks list.",
+        )
 
     findings: list[SecurityFinding] = []
     for failed_check in failed_checks:
@@ -143,7 +170,7 @@ def _extract_checkov_findings(stdout: str) -> list[SecurityFinding]:
             )
         )
 
-    return findings
+    return CheckovParseResult(is_valid=True, findings=findings)
 
 
 def _build_checkov_message(findings: list[SecurityFinding]) -> str:
@@ -197,9 +224,10 @@ def _run_checkov_scan(working_directory: Path) -> SecurityScanResult:
         [checkov_binary, *CHECKOV_COMMAND_ARGUMENTS],
         working_directory,
     )
-    findings = _extract_checkov_findings(log.stdout)
+    parse_result = _parse_checkov_output(log.stdout)
+    findings = parse_result.findings
 
-    if log.return_code == 0 and not findings:
+    if log.return_code == 0 and parse_result.is_valid and not findings:
         return SecurityScanResult(
             status="passed",
             message="Checkov security scan passed with no blocking findings.",
@@ -215,11 +243,12 @@ def _run_checkov_scan(working_directory: Path) -> SecurityScanResult:
             log=log,
         )
 
+    error_detail = f" {parse_result.error}" if parse_result.error else ""
     return SecurityScanResult(
         status="scan_error",
         message=(
             "Checkov did not complete successfully, so the Terraform remains "
-            "blocked until the scanner issue is resolved."
+            f"blocked until the scanner issue is resolved.{error_detail}"
         ),
         findings=[],
         log=log,
@@ -314,6 +343,7 @@ def validate_terraform(terraform_code: str) -> ValidationResult:
 
 __all__ = [
     "CommandLog",
+    "CheckovParseResult",
     "SecurityFinding",
     "SecurityScanResult",
     "ValidationResult",

@@ -236,6 +236,45 @@ def test_validate_terraform_captures_blocking_checkov_findings(monkeypatch) -> N
     assert "blocking security finding" in result.security_scan.message
 
 
+@pytest.mark.parametrize(
+    ("stdout", "expected_message"),
+    [
+        ("not-json", "invalid JSON"),
+        ('{"summary": {"failed": 0}}', "results object"),
+        ('{"results": {"failed_checks": {}}}', "failed_checks list"),
+    ],
+)
+def test_validate_terraform_treats_malformed_checkov_output_as_scan_error(
+    monkeypatch,
+    stdout: str,
+    expected_message: str,
+) -> None:
+    def fake_run(command, cwd, capture_output, text, check, timeout):
+        if command[0] == "/usr/bin/checkov":
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        if command[1] == "fmt":
+            return SimpleNamespace(returncode=0, stdout="main.tf", stderr="")
+
+        if command[1] == "init":
+            return SimpleNamespace(returncode=0, stdout="Initialized", stderr="")
+
+        if command[1] == "validate":
+            return SimpleNamespace(returncode=0, stdout="Success!", stderr="")
+
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(tf_validator.shutil, "which", fake_which)
+    monkeypatch.setattr(tf_validator.subprocess, "run", fake_run)
+
+    result = tf_validator.validate_terraform('resource "aws_s3_bucket" "demo" {}')
+
+    assert result.success is True
+    assert result.security_scan.status == "scan_error"
+    assert result.security_scan.findings == []
+    assert expected_message in result.security_scan.message
+
+
 def test_validate_terraform_reports_missing_checkov(monkeypatch) -> None:
     def fake_run(command, cwd, capture_output, text, check, timeout):
         if command[1] == "fmt":
