@@ -57,6 +57,9 @@ const workflowResponse: WorkflowApiResponse = {
     status: "succeeded",
     used_fallback: false,
     message: "Generated Terraform.",
+    repair_attempts: 0,
+    repair_applied: false,
+    repair_exhausted: false,
   },
   terraform: {
     generated_code: "resource \"aws_s3_bucket\" \"example\" {}",

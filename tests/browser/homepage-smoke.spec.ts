@@ -15,6 +15,9 @@ test("chat command center renders workflow cards and deploys ready code", async 
           status: "succeeded",
           used_fallback: false,
           message: "Terraform generated successfully.",
+          repair_attempts: 0,
+          repair_applied: false,
+          repair_exhausted: false,
         },
         terraform: {
           generated_code: 'resource "aws_s3_bucket" "demo" {}',
@@ -66,6 +69,11 @@ test("chat command center renders workflow cards and deploys ready code", async 
 
   await expect(page.getByText(/AI-Powered Terraform Architect/i).first()).toBeVisible();
   await expect(page.getByText(/Hello! Describe the AWS infrastructure/i)).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /Use suggested prompt: Create a private versioned S3 bucket with encryption and public access blocked/i,
+    })
+  ).toBeVisible();
 
   const textarea = page.getByPlaceholder(/Describe the infrastructure you need/i);
   await textarea.fill("Create an S3 bucket");
@@ -103,7 +111,14 @@ test("auto-fix issues handles blocked states via chat", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         request: { prompt: "Create S3 bucket" },
-        generation: { status: "succeeded", used_fallback: false, message: "Generated" },
+        generation: {
+          status: "succeeded",
+          used_fallback: false,
+          message: "Generated",
+          repair_attempts: 0,
+          repair_applied: false,
+          repair_exhausted: false,
+        },
         terraform: { generated_code: "resource aws_s3_bucket demo {}", formatted_code: "resource aws_s3_bucket demo {}" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
         security: { status: "failed", message: "Security findings found", findings: [securityFinding], log: null },
@@ -127,7 +142,14 @@ test("auto-fix issues handles blocked states via chat", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         request: { prompt: "Create S3 bucket" },
-        generation: { status: "succeeded", used_fallback: false, message: "Fixed" },
+        generation: {
+          status: "succeeded",
+          used_fallback: false,
+          message: "Fixed",
+          repair_attempts: 1,
+          repair_applied: true,
+          repair_exhausted: false,
+        },
         terraform: { generated_code: "resource aws_s3_bucket demo { # fixed }", formatted_code: "resource aws_s3_bucket demo { # fixed }" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
         security: { status: "passed", message: "Passed", findings: [], log: null },
@@ -160,7 +182,14 @@ test("reset intent returns the chat thread to the welcome state", async ({ page 
       contentType: "application/json",
       body: JSON.stringify({
         request: { prompt: "First test message" },
-        generation: { status: "succeeded", used_fallback: false, message: "Generated" },
+        generation: {
+          status: "succeeded",
+          used_fallback: false,
+          message: "Generated",
+          repair_attempts: 0,
+          repair_applied: false,
+          repair_exhausted: false,
+        },
         terraform: { generated_code: "resource demo {}", formatted_code: "resource demo {}" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
         security: { status: "passed", message: "Passed", findings: [], log: null },

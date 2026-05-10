@@ -138,6 +138,9 @@ def test_submit_workflow_returns_contract(monkeypatch) -> None:
         "status": "succeeded",
         "used_fallback": False,
         "message": "Terraform generated successfully from the Gemini-backed model.",
+        "repair_attempts": 0,
+        "repair_applied": False,
+        "repair_exhausted": False,
     }
     assert body["terraform"] == {
         "generated_code": 'resource "aws_s3_bucket" "demo" {}',
@@ -152,6 +155,420 @@ def test_submit_workflow_returns_contract(monkeypatch) -> None:
     )
     assert body["readiness"]["is_ready"] is True
     assert body["readiness"]["status"] == "ready"
+
+
+def test_submit_workflow_runs_automatic_repair_after_initial_failure(
+    monkeypatch,
+) -> None:
+    captured_fix_request: dict[str, object] = {}
+    validation_calls: list[str] = []
+
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform='resource "aws_s3_bucket" "demo" {}',
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+
+    def fake_generate_fixed_terraform_result(*args, **kwargs):
+        captured_fix_request["args"] = args
+        captured_fix_request["kwargs"] = kwargs
+        return GenerationResult(
+            terraform=(
+                'resource "aws_s3_bucket" "demo" {\n  tags = { Fixed = "true" }\n}'
+            ),
+            used_fallback=False,
+            message="Terraform successfully auto-fixed from the Gemini model.",
+        )
+
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        fake_generate_fixed_terraform_result,
+    )
+
+    def fake_validate_terraform(terraform_code: str) -> ValidationResult:
+        validation_calls.append(terraform_code)
+
+        if len(validation_calls) == 1:
+            return ValidationResult(
+                success=False,
+                formatted_code=terraform_code,
+                logs=[
+                    CommandLog(
+                        command="terraform validate -no-color",
+                        return_code=1,
+                        stdout="",
+                        stderr="Missing required argument",
+                    )
+                ],
+                security_scan=create_security_scan_result(
+                    status="not_run",
+                    message=(
+                        "Security scanning did not run because Terraform "
+                        "validation failed."
+                    ),
+                ),
+            )
+
+        return ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[
+                CommandLog(
+                    command="terraform validate -no-color",
+                    return_code=0,
+                    stdout="Success!",
+                    stderr="",
+                )
+            ],
+            security_scan=create_security_scan_result(
+                log=CommandLog(
+                    command="checkov -d . --framework terraform --output json",
+                    return_code=0,
+                    stdout='{"results": {"failed_checks": []}}',
+                    stderr="",
+                )
+            ),
+        )
+
+    monkeypatch.setattr(api, "validate_terraform", fake_validate_terraform)
+
+    response = post_workflow("Create an AWS S3 bucket")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(validation_calls) == 2
+    assert captured_fix_request["args"] == (
+        "Create an AWS S3 bucket",
+        'resource "aws_s3_bucket" "demo" {}',
+        (
+            "$ terraform validate -no-color\n\nexit code: 1\n\nstdout:\n\n"
+            "stderr:\nMissing required argument"
+        ),
+        "Security scanning did not run because Terraform validation failed.",
+    )
+    assert captured_fix_request["kwargs"] == {
+        "readiness_status": "blocked_by_validation",
+        "validation_status": "failed",
+        "security_status": "not_run",
+        "security_finding_count": 0,
+        "repair_attempt_number": 1,
+    }
+    assert body["validation"]["status"] == "passed"
+    assert body["security"]["status"] == "passed"
+    assert body["readiness"]["is_ready"] is True
+    assert body["generation"]["repair_attempts"] == 1
+    assert body["generation"]["repair_applied"] is True
+    assert body["generation"]["repair_exhausted"] is False
+    assert (
+        "Automatic repair pass succeeded after 1 attempt."
+        in body["generation"]["message"]
+    )
+
+
+def test_submit_workflow_skips_automatic_repair_when_initial_result_is_ready(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform='resource "aws_s3_bucket" "demo" {}',
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("repair should not run for ready output")
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(
+                log=CommandLog(
+                    command="checkov -d . --framework terraform --output json",
+                    return_code=0,
+                    stdout='{"results": {"failed_checks": []}}',
+                    stderr="",
+                )
+            ),
+        ),
+    )
+
+    response = post_workflow("Create an AWS S3 bucket")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["readiness"]["status"] == "ready"
+    assert body["generation"]["repair_attempts"] == 0
+    assert body["generation"]["repair_applied"] is False
+    assert body["generation"]["repair_exhausted"] is False
+    assert "Automatic repair pass" not in body["generation"]["message"]
+
+
+def test_submit_workflow_repairs_until_later_attempt_succeeds(monkeypatch) -> None:
+    repair_attempts: list[int] = []
+
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform="initial terraform",
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+
+    def fake_generate_fixed_terraform_result(*args, **kwargs):
+        repair_attempts.append(kwargs["repair_attempt_number"])
+        return GenerationResult(
+            terraform=f"repaired attempt {kwargs['repair_attempt_number']}",
+            used_fallback=False,
+            message="Terraform successfully auto-fixed from the Gemini model.",
+        )
+
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        fake_generate_fixed_terraform_result,
+    )
+
+    def fake_validate_terraform(terraform_code: str) -> ValidationResult:
+        if terraform_code == "initial terraform":
+            return ValidationResult(
+                success=True,
+                formatted_code=terraform_code,
+                logs=[],
+                security_scan=create_security_scan_result(
+                    status="failed",
+                    message="Checkov reported 1 blocking security finding.",
+                    findings=[
+                        SecurityFinding(
+                            check_id="CKV_AWS_20",
+                            check_name="Finding",
+                            resource="aws_s3_bucket.demo",
+                            file_path="/main.tf",
+                            file_line_range="1-3",
+                            guideline="",
+                        )
+                    ],
+                ),
+            )
+        if terraform_code == "repaired attempt 1":
+            return ValidationResult(
+                success=True,
+                formatted_code=terraform_code,
+                logs=[],
+                security_scan=create_security_scan_result(
+                    status="failed",
+                    message="Checkov reported 1 blocking security finding.",
+                    findings=[
+                        SecurityFinding(
+                            check_id="CKV_AWS_21",
+                            check_name="Finding",
+                            resource="aws_s3_bucket.demo",
+                            file_path="/main.tf",
+                            file_line_range="1-3",
+                            guideline="",
+                        )
+                    ],
+                ),
+            )
+
+        return ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(
+                log=CommandLog(
+                    command="checkov -d . --framework terraform --output json",
+                    return_code=0,
+                    stdout='{"results": {"failed_checks": []}}',
+                    stderr="",
+                )
+            ),
+        )
+
+    monkeypatch.setattr(api, "validate_terraform", fake_validate_terraform)
+
+    response = post_workflow("Create an AWS S3 bucket")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert repair_attempts == [1, 2]
+    assert body["generation"]["repair_attempts"] == 2
+    assert body["generation"]["repair_applied"] is True
+    assert body["generation"]["repair_exhausted"] is False
+    assert body["readiness"]["status"] == "ready"
+
+
+def test_submit_workflow_stops_after_three_failed_repairs(monkeypatch) -> None:
+    repair_attempts: list[int] = []
+
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform="initial terraform",
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+
+    def fake_generate_fixed_terraform_result(*args, **kwargs):
+        repair_attempts.append(kwargs["repair_attempt_number"])
+        return GenerationResult(
+            terraform=f"repaired attempt {kwargs['repair_attempt_number']}",
+            used_fallback=False,
+            message="Terraform successfully auto-fixed from the Gemini model.",
+        )
+
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        fake_generate_fixed_terraform_result,
+    )
+
+    def fake_validate_terraform(terraform_code: str) -> ValidationResult:
+        return ValidationResult(
+            success=False,
+            formatted_code=terraform_code,
+            logs=[
+                CommandLog(
+                    command="terraform validate -no-color",
+                    return_code=1,
+                    stdout="",
+                    stderr="Still failing",
+                )
+            ],
+            security_scan=create_security_scan_result(
+                status="not_run",
+                message=(
+                    "Security scanning did not run because Terraform validation failed."
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(api, "validate_terraform", fake_validate_terraform)
+
+    response = post_workflow("Create an AWS S3 bucket")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert repair_attempts == [1, 2, 3]
+    assert body["generation"]["repair_attempts"] == 3
+    assert body["generation"]["repair_applied"] is True
+    assert body["generation"]["repair_exhausted"] is True
+    assert body["readiness"]["status"] == "blocked_by_validation"
+    assert body["terraform"]["generated_code"] == "repaired attempt 3"
+    assert (
+        "Automatic repair pass stopped after 3 attempts."
+        in body["generation"]["message"]
+    )
+
+
+def test_submit_workflow_does_not_repair_scanner_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform="terraform {}",
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("repair should not run for scanner setup failures")
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(
+                status="scanner_unavailable",
+                message="Checkov CLI not found on PATH.",
+                log=CommandLog(
+                    command="checkov",
+                    return_code=127,
+                    stdout="",
+                    stderr="Checkov CLI not found on PATH.",
+                ),
+            ),
+        ),
+    )
+
+    response = post_workflow("Create infrastructure")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generation"]["repair_attempts"] == 0
+    assert body["generation"]["repair_applied"] is False
+    assert body["readiness"]["status"] == "blocked_by_security_setup"
+
+
+def test_submit_workflow_does_not_repair_scan_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "generate_terraform_result",
+        lambda prompt: GenerationResult(
+            terraform="terraform {}",
+            used_fallback=False,
+            message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("repair should not run for scan errors")
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "validate_terraform",
+        lambda terraform_code: ValidationResult(
+            success=True,
+            formatted_code=terraform_code,
+            logs=[],
+            security_scan=create_security_scan_result(
+                status="scan_error",
+                message="Checkov did not complete successfully.",
+                log=CommandLog(
+                    command="checkov -d . --framework terraform --output json",
+                    return_code=1,
+                    stdout="not-json",
+                    stderr="scanner error",
+                ),
+            ),
+        ),
+    )
+
+    response = post_workflow("Create infrastructure")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generation"]["repair_attempts"] == 0
+    assert body["generation"]["repair_applied"] is False
+    assert body["readiness"]["status"] == "blocked_by_security_scan"
 
 
 def test_submit_workflow_rejects_blank_prompt() -> None:
@@ -174,6 +591,15 @@ def test_submit_workflow_preserves_validation_failure_details(monkeypatch) -> No
                 "No Gemini API key is configured. Using the safe fallback "
                 "Terraform document instead of a live model response."
             ),
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        lambda *args, **kwargs: GenerationResult(
+            terraform="terraform {}",
+            used_fallback=True,
+            message="Terraform auto-fix did not resolve the validation failure.",
         ),
     )
     monkeypatch.setattr(
@@ -204,6 +630,9 @@ def test_submit_workflow_preserves_validation_failure_details(monkeypatch) -> No
     assert response.status_code == 200
     body = response.json()
     assert body["generation"]["status"] == "fallback"
+    assert body["generation"]["repair_attempts"] == 3
+    assert body["generation"]["repair_applied"] is True
+    assert body["generation"]["repair_exhausted"] is True
     assert body["validation"]["status"] == "failed"
     assert body["security"]["status"] == "not_run"
     assert body["validation"]["combined_log"] == (
@@ -221,6 +650,15 @@ def test_submit_workflow_blocks_readiness_on_checkov_findings(monkeypatch) -> No
             terraform='resource "aws_s3_bucket" "demo" {}',
             used_fallback=False,
             message="Terraform generated successfully from the Gemini-backed model.",
+        ),
+    )
+    monkeypatch.setattr(
+        api,
+        "generate_fixed_terraform_result",
+        lambda *args, **kwargs: GenerationResult(
+            terraform='resource "aws_s3_bucket" "demo" {}',
+            used_fallback=False,
+            message="Terraform auto-fix did not resolve the security findings.",
         ),
     )
     monkeypatch.setattr(
@@ -274,6 +712,9 @@ def test_submit_workflow_blocks_readiness_on_checkov_findings(monkeypatch) -> No
 
     assert response.status_code == 200
     body = response.json()
+    assert body["generation"]["repair_attempts"] == 3
+    assert body["generation"]["repair_applied"] is True
+    assert body["generation"]["repair_exhausted"] is True
     assert body["security"]["status"] == "failed"
     assert body["security"]["findings"][0]["check_id"] == "CKV_AWS_20"
     assert body["readiness"]["is_ready"] is False

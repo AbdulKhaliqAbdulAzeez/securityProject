@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from backend.ai_generator import (
+    GenerationResult,
     generate_fixed_terraform_result,
     generate_terraform_result,
 )
@@ -14,7 +15,7 @@ from backend.gitops_manager import (
     GitOpsDeliveryError,
     deliver_terraform_via_gitops,
 )
-from backend.tf_validator import validate_terraform
+from backend.tf_validator import SecurityFinding, ValidationResult, validate_terraform
 
 
 class FixRequest(BaseModel):
@@ -45,6 +46,9 @@ class GenerationPayload(BaseModel):
     status: str
     used_fallback: bool
     message: str
+    repair_attempts: int = 0
+    repair_applied: bool = False
+    repair_exhausted: bool = False
 
 
 class TerraformPayload(BaseModel):
@@ -112,10 +116,14 @@ class DeployResponse(BaseModel):
     delivery: GitOpsDeliveryPayload
 
 
-def _build_response_from_generation_result(
-    prompt: str, generation_result
+MAX_REPAIR_ATTEMPTS = 3
+
+
+def _build_response(
+    prompt: str,
+    generation_result: GenerationResult,
+    validation_result: ValidationResult,
 ) -> WorkflowResponse:
-    validation_result = validate_terraform(generation_result.terraform)
     security_result = validation_result.security_scan
 
     validation_status = "passed" if validation_result.success else "failed"
@@ -170,6 +178,9 @@ def _build_response_from_generation_result(
             status=generation_status,
             used_fallback=generation_result.used_fallback,
             message=generation_result.message,
+            repair_attempts=getattr(generation_result, "repair_attempts", 0),
+            repair_applied=getattr(generation_result, "repair_applied", False),
+            repair_exhausted=getattr(generation_result, "repair_exhausted", False),
         ),
         terraform=TerraformPayload(
             generated_code=generation_result.terraform,
@@ -206,6 +217,154 @@ def _build_response_from_generation_result(
                 "the default branch."
             ),
         ),
+    )
+
+
+def _format_security_findings_for_fix(
+    findings: list[SecurityFinding],
+    message: str,
+) -> str:
+    normalized_message = message.strip()
+    if not findings:
+        return normalized_message
+
+    formatted_findings = "\n\n".join(
+        "\n".join(
+            part
+            for part in [
+                f"Finding {index + 1}",
+                f"Check: {finding.check_id} - {finding.check_name}",
+                f"Resource: {finding.resource}",
+                f"Location: {finding.file_path}:{finding.file_line_range}",
+                f"Guideline: {finding.guideline}" if finding.guideline else "",
+            ]
+            if part
+        )
+        for index, finding in enumerate(findings)
+    )
+
+    return "\n\n".join(
+        part for part in [normalized_message, formatted_findings] if part
+    )
+
+
+def _should_attempt_repair(validation_result: ValidationResult) -> bool:
+    if not validation_result.success:
+        return True
+
+    return validation_result.security_scan.status == "failed"
+
+
+def _merge_repair_message(
+    initial_result: GenerationResult,
+    repaired_result: GenerationResult,
+    repaired_validation: ValidationResult,
+    repair_attempts: int,
+    repair_exhausted: bool,
+) -> str:
+    if (
+        repaired_validation.success
+        and repaired_validation.security_scan.status == "passed"
+    ):
+        return (
+            f"{initial_result.message} "
+            f"Automatic repair pass succeeded after {repair_attempts} attempt"
+            f"{'' if repair_attempts == 1 else 's'}."
+        )
+
+    if repair_exhausted:
+        return (
+            f"{initial_result.message} "
+            f"Automatic repair pass stopped after {repair_attempts} attempts. "
+            "Validation or security issues remain."
+        )
+
+    return (
+        f"{initial_result.message} "
+        f"Automatic repair pass attempted {repair_attempts} time"
+        f"{'' if repair_attempts == 1 else 's'}. {repaired_result.message}"
+    )
+
+
+def _run_generation_with_repair(
+    prompt: str,
+) -> tuple[GenerationResult, ValidationResult]:
+    initial_result = generate_terraform_result(prompt)
+    initial_validation = validate_terraform(initial_result.terraform)
+
+    if not _should_attempt_repair(initial_validation):
+        return (
+            replace(
+                initial_result,
+                repair_attempts=0,
+                repair_applied=False,
+                repair_exhausted=False,
+            ),
+            initial_validation,
+        )
+
+    current_result = initial_result
+    current_validation = initial_validation
+    repair_attempts = 0
+
+    for attempt_number in range(1, MAX_REPAIR_ATTEMPTS + 1):
+        if not _should_attempt_repair(current_validation):
+            break
+
+        repair_attempts = attempt_number
+        repaired_result = generate_fixed_terraform_result(
+            prompt,
+            current_result.terraform,
+            current_validation.combined_log() if not current_validation.success else "",
+            _format_security_findings_for_fix(
+                current_validation.security_scan.findings,
+                current_validation.security_scan.message,
+            ),
+            readiness_status=(
+                "blocked_by_validation"
+                if not current_validation.success
+                else "blocked_by_security"
+            ),
+            validation_status="failed" if not current_validation.success else "passed",
+            security_status=current_validation.security_scan.status,
+            security_finding_count=len(current_validation.security_scan.findings),
+            repair_attempt_number=attempt_number,
+        )
+        repaired_validation = validate_terraform(repaired_result.terraform)
+
+        current_result = repaired_result
+        current_validation = repaired_validation
+
+        if (
+            repaired_validation.success
+            and repaired_validation.security_scan.status == "passed"
+        ):
+            break
+
+        if not _should_attempt_repair(repaired_validation):
+            break
+
+    repair_exhausted = (
+        repair_attempts == MAX_REPAIR_ATTEMPTS
+        and _should_attempt_repair(current_validation)
+    )
+
+    return (
+        replace(
+            current_result,
+            used_fallback=initial_result.used_fallback or current_result.used_fallback,
+            message=_merge_repair_message(
+                initial_result,
+                current_result,
+                current_validation,
+                repair_attempts=repair_attempts,
+                repair_exhausted=repair_exhausted,
+            ),
+            repair_attempts=repair_attempts,
+            repair_applied=repair_attempts > 0,
+            repair_exhausted=repair_exhausted,
+        ),
+        current_validation,
     )
 
 
@@ -268,8 +427,8 @@ def submit_workflow(request: WorkflowRequest) -> WorkflowResponse:
         )
 
     try:
-        generation_result = generate_terraform_result(prompt)
-        return _build_response_from_generation_result(prompt, generation_result)
+        generation_result, validation_result = _run_generation_with_repair(prompt)
+        return _build_response(prompt, generation_result, validation_result)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -294,7 +453,8 @@ def submit_fix(request: FixRequest) -> WorkflowResponse:
             security_status=request.security_status.strip(),
             security_finding_count=request.security_finding_count,
         )
-        return _build_response_from_generation_result(prompt, generation_result)
+        validation_result = validate_terraform(generation_result.terraform)
+        return _build_response(prompt, generation_result, validation_result)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

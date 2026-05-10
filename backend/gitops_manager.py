@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -42,11 +44,33 @@ def _read_required_setting(name: str) -> str:
     )
 
 
+def _normalize_repository_name(repository_name: str) -> str:
+    normalized = repository_name.strip()
+    ssh_prefix = "git@github.com:"
+    if normalized.startswith(ssh_prefix) and normalized.endswith(".git"):
+        normalized = normalized[len(ssh_prefix) : -len(".git")]
+
+    if not re.fullmatch(r"[^/\s]+/[^/\s]+", normalized):
+        raise GitOpsConfigurationError(
+            "GITHUB_REPOSITORY must be configured as owner/repository."
+        )
+
+    return normalized
+
+
 def build_gitops_branch_name(prompt: str, unique_suffix: str | None = None) -> str:
     normalized_prompt = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")
     branch_fragment = normalized_prompt[:40] or "terraform-update"
     suffix = unique_suffix or uuid.uuid4().hex[:8]
     return f"gitops/terraform-{branch_fragment}-{suffix}"
+
+
+def build_request_folder_path(prompt: str, unique_suffix: str | None = None) -> str:
+    normalized_prompt = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")
+    folder_fragment = normalized_prompt[:40] or "terraform-update"
+    suffix = unique_suffix or uuid.uuid4().hex[:8]
+    date_prefix = datetime.now(UTC).date().isoformat()
+    return f"requests/{date_prefix}-{folder_fragment}-{suffix}"
 
 
 def _build_commit_message(prompt: str) -> str:
@@ -87,11 +111,16 @@ def deliver_terraform_via_gitops(
         raise ValueError("Terraform code is required for GitOps delivery.")
 
     github_token = _read_required_setting("GITHUB_TOKEN")
-    repository_name = _read_required_setting("GITHUB_REPOSITORY")
+    repository_name = _normalize_repository_name(
+        _read_required_setting("GITHUB_REPOSITORY")
+    )
     base_branch = os.getenv("GITHUB_BASE_BRANCH", "main").strip() or "main"
 
     github_client = _create_github_client(github_token)
     branch_name = build_gitops_branch_name(prompt)
+    request_folder = build_request_folder_path(prompt)
+    metadata_path = f"{request_folder}/metadata.json"
+    terraform_path = f"{request_folder}/main.tf"
 
     try:
         repository = github_client.get_repo(repository_name)
@@ -102,9 +131,25 @@ def deliver_terraform_via_gitops(
         )
 
         commit_result = repository.create_file(
-            path="main.tf",
+            path=terraform_path,
             message=_build_commit_message(prompt),
             content=normalized_code + "\n",
+            branch=branch_name,
+        )
+        repository.create_file(
+            path=metadata_path,
+            message=_build_commit_message(prompt),
+            content=json.dumps(
+                {
+                    "prompt": " ".join(prompt.split()),
+                    "delivery_branch": branch_name,
+                    "generated_at": datetime.now(UTC).isoformat(),
+                    "validation_gate": "passed",
+                    "security_gate": "passed",
+                },
+                indent=2,
+            )
+            + "\n",
             branch=branch_name,
         )
         pull_request = repository.create_pull(
@@ -134,5 +179,6 @@ __all__ = [
     "GitOpsDeliveryError",
     "GitOpsDeliveryResult",
     "build_gitops_branch_name",
+    "build_request_folder_path",
     "deliver_terraform_via_gitops",
 ]

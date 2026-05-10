@@ -47,7 +47,14 @@ test("chat interface resets on 'reset' command", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         request: { prompt: "First test message" },
-        generation: { status: "succeeded", used_fallback: false, message: "Generated" },
+        generation: {
+          status: "succeeded",
+          used_fallback: false,
+          message: "Generated",
+          repair_attempts: 0,
+          repair_applied: false,
+          repair_exhausted: false,
+        },
         terraform: { generated_code: "resource demo {}", formatted_code: "resource demo {}" },
         validation: { status: "passed", message: "Passed", logs: [], combined_log: "" },
         security: { status: "passed", message: "Passed", findings: [], log: null },

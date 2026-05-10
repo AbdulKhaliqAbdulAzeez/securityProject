@@ -102,8 +102,37 @@ def test_generate_terraform_returns_cleaned_model_output(monkeypatch) -> None:
                 "Do not return Markdown fences.\n"
                 "Do not explain the output.\n"
                 "Keep the file in one Terraform document suitable for `main.tf`.\n"
-                "Prefer a minimal but coherent configuration that matches the "
-                "request.\n\n"
+                "Generate secure-by-default AWS Terraform unless the user "
+                "explicitly asks\n"
+                "for a less restrictive design.\n"
+                "Prefer the smallest architecture that satisfies the request "
+                "while still\n"
+                "meeting common security controls.\n"
+                "Include Terraform and provider version constraints.\n"
+                "Prefer private resources unless public exposure is explicitly "
+                "required.\n"
+                "Avoid creating extra buckets, topics, or replication paths "
+                "unless the\n"
+                "user explicitly requests them.\n"
+                "If the request involves S3:\n"
+                "- block public access\n"
+                "- enable bucket versioning\n"
+                "- enable default encryption\n"
+                "- prefer KMS encryption over AES256\n"
+                "- add lifecycle configuration when it makes operational sense\n"
+                "- do not add cross-region replication, access logging buckets, "
+                "or event\n"
+                "  notification infrastructure unless the user explicitly "
+                "requests them\n"
+                "If the request involves EC2:\n"
+                "- require IMDSv2\n"
+                "- encrypt attached EBS volumes\n"
+                "- avoid public SSH ingress\n"
+                "If the request involves security groups:\n"
+                "- avoid 0.0.0.0/0 ingress except explicitly requested HTTP or "
+                "HTTPS\n"
+                "Prefer coherent, production-sensible defaults over bare "
+                "minimum demos.\n\n"
                 "User request:\n"
                 "Create an AWS S3 bucket"
             ),
@@ -127,6 +156,10 @@ def test_generate_terraform_builds_aws_single_file_prompt(monkeypatch) -> None:
     assert "single Terraform configuration file for AWS" in prompt
     assert "Do not return Markdown fences." in prompt
     assert "suitable for `main.tf`" in prompt
+    assert "secure-by-default AWS Terraform" in prompt
+    assert "prefer KMS encryption over AES256" in prompt
+    assert "do not add cross-region replication" in prompt
+    assert "require IMDSv2" in prompt
     assert "Create an AWS S3 bucket" in prompt
 
 
@@ -238,6 +271,7 @@ def test_generate_fixed_terraform_includes_hidden_repair_context(monkeypatch) ->
         validation_status="passed",
         security_status="failed",
         security_finding_count=1,
+        repair_attempt_number=2,
     )
 
     assert result.terraform == 'resource "aws_s3_bucket" "demo" {}'
@@ -248,4 +282,7 @@ def test_generate_fixed_terraform_includes_hidden_repair_context(monkeypatch) ->
     assert "CKV_AWS_20" in prompt
     assert "Checkov finding count:" in prompt
     assert "1" in prompt
+    assert "Repair attempt number: 2 of 3" in prompt
+    assert "Minimize architectural churn." in prompt
+    assert "Avoid adding new services unless they are explicitly required" in prompt
     assert "Return only valid Terraform HCL." in prompt

@@ -22,6 +22,9 @@ export type WorkflowApiResponse = {
     status: "succeeded" | "fallback";
     used_fallback: boolean;
     message: string;
+    repair_attempts: number;
+    repair_applied: boolean;
+    repair_exhausted: boolean;
   };
   terraform: {
     generated_code: string;

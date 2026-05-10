@@ -97,11 +97,13 @@ describe("Chat Interface", () => {
     const input = screen.getByPlaceholderText(/Describe the infrastructure you need/i);
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Use suggested prompt: Create an S3 bucket/i,
+        name: /Use suggested prompt: Create a private versioned S3 bucket with encryption and public access blocked/i,
       })
     );
 
-    expect(input).toHaveValue("Create an S3 bucket");
+    expect(input).toHaveValue(
+      "Create a private versioned S3 bucket with encryption and public access blocked"
+    );
   });
 
   it("shows an error toast when the agent returns an error message", async () => {

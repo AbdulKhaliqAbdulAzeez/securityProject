@@ -111,13 +111,38 @@ Set the GitHub values the backend needs before using `Deploy to GitHub`:
 
 ```bash
 GITHUB_TOKEN="your-token-here"
-GITHUB_REPOSITORY="owner/repository"
+GITHUB_REPOSITORY="AbdulKhaliqAbdulAzeez/AI-Terraform-Repo-"
 GITHUB_BASE_BRANCH="main"
 ```
 
 Use a token with repository contents and pull-request permissions scoped to a
 test repository where possible. The token must stay server-side and should
 never be exposed in client code or browser logs.
+
+If you have the SSH remote URL, normalize it to the repository identifier used
+by PyGithub:
+
+```bash
+git@github.com:AbdulKhaliqAbdulAzeez/AI-Terraform-Repo-.git
+```
+
+becomes:
+
+```bash
+AbdulKhaliqAbdulAzeez/AI-Terraform-Repo-
+```
+
+GitOps delivery now writes validated Terraform into a request-scoped folder on
+the PR branch instead of overwriting a root `main.tf`, for example:
+
+```text
+requests/2026-05-02-create-an-aws-s3-bucket-abc12345/
+  main.tf
+  metadata.json
+```
+
+Each `metadata.json` records the source prompt, delivery branch, generation
+timestamp, and passed validation/security gate status.
 
 ## Run The Project Locally
 
@@ -181,4 +206,3 @@ orchestration project:
 The original Python MVP artifacts live under `docs/_specs/site-foundation/`.
 The active dual-stack transition workstream lives under
 `docs/_specs/nextjs-platform-transition/`.
-

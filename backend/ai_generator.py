@@ -57,6 +57,9 @@ class GenerationResult:
     terraform: str
     used_fallback: bool
     message: str
+    repair_attempts: int = 0
+    repair_applied: bool = False
+    repair_exhausted: bool = False
 
 
 def is_api_key_configured() -> bool:
@@ -72,7 +75,29 @@ def _build_prompt(user_request: str) -> str:
         Do not return Markdown fences.
         Do not explain the output.
         Keep the file in one Terraform document suitable for `main.tf`.
-        Prefer a minimal but coherent configuration that matches the request.
+        Generate secure-by-default AWS Terraform unless the user explicitly asks
+        for a less restrictive design.
+        Prefer the smallest architecture that satisfies the request while still
+        meeting common security controls.
+        Include Terraform and provider version constraints.
+        Prefer private resources unless public exposure is explicitly required.
+        Avoid creating extra buckets, topics, or replication paths unless the
+        user explicitly requests them.
+        If the request involves S3:
+        - block public access
+        - enable bucket versioning
+        - enable default encryption
+        - prefer KMS encryption over AES256
+        - add lifecycle configuration when it makes operational sense
+        - do not add cross-region replication, access logging buckets, or event
+          notification infrastructure unless the user explicitly requests them
+        If the request involves EC2:
+        - require IMDSv2
+        - encrypt attached EBS volumes
+        - avoid public SSH ingress
+        If the request involves security groups:
+        - avoid 0.0.0.0/0 ingress except explicitly requested HTTP or HTTPS
+        Prefer coherent, production-sensible defaults over bare minimum demos.
 
         User request:
         {user_request.strip()}
@@ -89,6 +114,7 @@ def _build_fix_prompt(
     validation_status: str = "",
     security_status: str = "",
     security_finding_count: int = 0,
+    repair_attempt_number: int = 0,
 ) -> str:
     return dedent(
         f"""
@@ -97,6 +123,14 @@ def _build_fix_prompt(
         Preserve the original infrastructure intent. Fix only the blockers
         described below unless a small supporting change is required for a valid,
         secure Terraform configuration.
+        This is an iterative repair pass.
+        Repair attempt number: {repair_attempt_number} of 3
+        Minimize architectural churn.
+        Prefer the smallest change set that resolves the current blockers.
+        Remove previously introduced unnecessary resources if they are causing
+        validation or security findings.
+        Avoid adding new services unless they are explicitly required by the
+        original user request.
 
         Original user request:
         {user_request.strip()}
@@ -272,6 +306,7 @@ def generate_fixed_terraform_result(
     validation_status: str = "",
     security_status: str = "",
     security_finding_count: int = 0,
+    repair_attempt_number: int = 0,
 ) -> GenerationResult:
     if not user_request.strip():
         raise ValueError("A natural-language infrastructure request is required.")
@@ -307,6 +342,7 @@ def generate_fixed_terraform_result(
                     validation_status,
                     security_status,
                     security_finding_count,
+                    repair_attempt_number,
                 ),
                 config={"temperature": 0},
             )

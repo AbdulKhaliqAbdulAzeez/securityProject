@@ -8,6 +8,7 @@ import {
   createUserMessage,
 } from "@/lib/chat-state";
 import { AgentContext, runAgent } from "@/lib/chat-agent";
+import { suggestedPrompts } from "@/lib/suggested-prompts";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 
@@ -38,12 +39,6 @@ export function ChatShell() {
       });
     }
   }, [state.messages]);
-
-  const suggestions = [
-    "Create an S3 bucket",
-    "Set up a VPC with subnets",
-    "Provision an EC2 instance",
-  ];
 
   useEffect(() => {
     if (!toast) {
@@ -140,7 +135,7 @@ export function ChatShell() {
       <ChatInput
         onSend={handleSend}
         disabled={state.isBusy}
-        suggestions={state.messages.length === 1 ? suggestions : []}
+        suggestions={state.messages.length === 1 ? [...suggestedPrompts] : []}
       />
     </div>
   );
