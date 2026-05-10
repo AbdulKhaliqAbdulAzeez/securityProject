@@ -68,6 +68,17 @@ test("chat command center renders workflow cards and deploys ready code", async 
   await page.goto("/");
 
   await expect(page.getByText(/AI-Powered Terraform Architect/i).first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: /Generate secure infrastructure with validation built in/i,
+    })
+  ).toBeVisible();
+  await expect.poll(async () => {
+    return page.locator(".chat-workspace").evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.top >= window.innerHeight * 0.9;
+    });
+  }).toBe(true);
   await expect(page.getByText(/Hello! Describe the AWS infrastructure/i)).toBeVisible();
   await expect(
     page.getByRole("button", {

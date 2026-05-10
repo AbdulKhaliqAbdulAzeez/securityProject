@@ -10,7 +10,18 @@ test("chat interface renders and handles basic conversation (Sprint 1)", async (
   await expect(page.getByText(/Checkov live/i)).toBeVisible();
   await expect(page.getByText(/GitOps live/i)).toBeVisible();
 
-  // Check for Welcome message
+  // Check for Hero and below-the-fold chat workspace before touching chat content.
+  await expect(
+    page.getByRole("heading", {
+      name: /Generate secure infrastructure with validation built in/i,
+    })
+  ).toBeVisible();
+  await expect.poll(async () => {
+    return page.locator(".chat-workspace").evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.top >= window.innerHeight * 0.9;
+    });
+  }).toBe(true);
   await expect(
     page.getByText(/Hello! Describe the AWS infrastructure/i)
   ).toBeVisible();
@@ -18,8 +29,19 @@ test("chat interface renders and handles basic conversation (Sprint 1)", async (
   // Check for Input bar
   const textarea = page.getByPlaceholder(/Describe the infrastructure you need/i);
   await expect(textarea).toBeVisible();
+  await page.getByRole("button", { name: /Use secure VPC prompt/i }).click();
+  await expect.poll(async () => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(0);
+  await expect(textarea).toHaveValue(
+    "Create a secure AWS VPC with public and private subnets, flow logs, restricted security groups, and encrypted storage"
+  );
+  await expect(textarea).toBeFocused();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole("button", { name: /Start building/i }).click();
+  await expect.poll(async () => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(0);
+  await expect(textarea).toBeFocused();
 
   const sendButton = page.getByRole("button", { name: /Send message/i });
+  await textarea.fill("");
   await expect(sendButton).toBeDisabled();
 
   // Type a message
@@ -38,6 +60,12 @@ test("chat interface renders and handles basic conversation (Sprint 1)", async (
   await expect(
     thread.getByText(/Terraform|error|received/i).first()
   ).toBeVisible({ timeout: 10000 });
+  await expect(
+    page.getByRole("heading", {
+      name: /Generate secure infrastructure with validation built in/i,
+    })
+  ).not.toBeVisible();
+  await expect(page.locator(".chat-workspace")).toBeInViewport();
 });
 
 test("chat interface resets on 'reset' command", async ({ page }) => {

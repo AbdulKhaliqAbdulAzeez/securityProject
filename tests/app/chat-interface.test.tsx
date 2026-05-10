@@ -22,12 +22,35 @@ describe("Chat Interface", () => {
     render(<Home />);
 
     expect(
+      screen.getByRole("heading", {
+        name: /Generate secure infrastructure with validation built in/i,
+      })
+    ).toBeInTheDocument();
+
+    expect(
       screen.getByText(/Hello! Describe the AWS infrastructure/i)
     ).toBeInTheDocument();
 
     expect(
       screen.getByPlaceholderText(/Describe the infrastructure you need/i)
     ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Terraform security chat workspace/i)
+    ).toBeInTheDocument();
+  });
+
+  it("focuses and fills the chat input from hero actions", () => {
+    render(<Home />);
+
+    const input = screen.getByPlaceholderText(/Describe the infrastructure you need/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start building/i }));
+    expect(input).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: /Use secure VPC prompt/i }));
+    expect(input).toHaveValue(
+      "Create a secure AWS VPC with public and private subnets, flow logs, restricted security groups, and encrypted storage"
+    );
   });
 
   it("allows typing and sending a message", async () => {
@@ -64,6 +87,11 @@ describe("Chat Interface", () => {
     expect(
       screen.getByText(/I've received your request for "Create an S3 bucket"/i)
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: /Generate secure infrastructure with validation built in/i,
+      })
+    ).not.toBeInTheDocument();
 
     // Thinking indicator should be gone (after runAgent resolves)
     expect(document.querySelector(".chat-thinking")).not.toBeInTheDocument();

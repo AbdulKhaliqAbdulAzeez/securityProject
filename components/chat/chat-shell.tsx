@@ -9,8 +9,9 @@ import {
 } from "@/lib/chat-state";
 import { AgentContext, runAgent } from "@/lib/chat-agent";
 import { suggestedPrompts } from "@/lib/suggested-prompts";
+import { ChatHero } from "./chat-hero";
 import { ChatMessage } from "./chat-message";
-import { ChatInput } from "./chat-input";
+import { ChatInput, ChatInputHandle } from "./chat-input";
 
 const initialContext: AgentContext = {
   terraformCode: "",
@@ -29,6 +30,9 @@ export function ChatShell() {
   const [context, setContext] = useState<AgentContext>(initialContext);
   const [toast, setToast] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<ChatInputHandle>(null);
+  const isEmptyState = state.messages.length === 1;
 
   // Auto-scroll
   useEffect(() => {
@@ -114,29 +118,56 @@ export function ChatShell() {
     });
   };
 
+  const moveToWorkspace = () => {
+    workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+
+  const handleStartBuilding = () => {
+    moveToWorkspace();
+    inputRef.current?.focus();
+  };
+
+  const handleUseHeroPrompt = () => {
+    moveToWorkspace();
+    inputRef.current?.fill(
+      "Create a secure AWS VPC with public and private subnets, flow logs, restricted security groups, and encrypted storage"
+    );
+  };
+
   return (
-    <div className={`chat-frame ${state.messages.length === 1 ? "chat-frame--empty" : ""}`}>
+    <div className={`chat-frame ${isEmptyState ? "chat-frame--empty" : ""}`}>
       {toast && (
         <div className="chat-toast" role="status" aria-live="polite">
           <span className="chat-toast__title">Workflow issue</span>
           <span>{toast}</span>
         </div>
       )}
-      <div className="chat-thread" ref={threadRef}>
-        {state.messages.map((msg, index) => (
-          <ChatMessage
-            key={msg.id}
-            message={msg}
-            onAction={handleAction}
-            index={index}
+      {isEmptyState && (
+        <section className="chat-landing" aria-label="Security agent introduction">
+          <ChatHero
+            onStart={handleStartBuilding}
+            onUsePrompt={handleUseHeroPrompt}
           />
-        ))}
-      </div>
-      <ChatInput
-        onSend={handleSend}
-        disabled={state.isBusy}
-        suggestions={state.messages.length === 1 ? [...suggestedPrompts] : []}
-      />
+        </section>
+      )}
+      <section className="chat-workspace" ref={workspaceRef} aria-label="Terraform security chat workspace">
+        <div className="chat-thread" ref={threadRef}>
+          {state.messages.map((msg, index) => (
+            <ChatMessage
+              key={msg.id}
+              message={msg}
+              onAction={handleAction}
+              index={index}
+            />
+          ))}
+        </div>
+        <ChatInput
+          ref={inputRef}
+          onSend={handleSend}
+          disabled={state.isBusy}
+          suggestions={isEmptyState ? [...suggestedPrompts] : []}
+        />
+      </section>
     </div>
   );
 }

@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -8,9 +14,25 @@ interface ChatInputProps {
   suggestions?: string[];
 }
 
-export function ChatInput({ onSend, disabled, suggestions = [] }: ChatInputProps) {
+export interface ChatInputHandle {
+  focus: () => void;
+  fill: (value: string) => void;
+}
+
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
+function ChatInput({ onSend, disabled, suggestions = [] }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      textareaRef.current?.focus();
+    },
+    fill: (value: string) => {
+      setText(value);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+  }));
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -94,4 +116,4 @@ export function ChatInput({ onSend, disabled, suggestions = [] }: ChatInputProps
       </div>
     </div>
   );
-}
+});
